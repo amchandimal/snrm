@@ -1,0 +1,3 @@
+source,target,lead_time_value,lead_time_unit,capacity_value,capacity_time_unit,unit_cost,failure_prob
+SUP-1,PLANT-1,0,DAY,100,DAY,1,0
+PLANT-1,CUST-1,0,DAY,100,DAY,1,0

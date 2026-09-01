@@ -1,0 +1,247 @@
+<!--
+  The actions menu of FR-23 (above the table, a selection) and FR-26 (on a row, one network).
+  Bootstrap's dropdown *markup*; the open state and the keyboard are Angular's, because
+  `angular.json` loads Bootstrap's CSS and none of its JavaScript - the same split
+  `shared/confirm-dialog` makes for the modal.
+
+  One component, two scopes. `scope` defaults to `selection`, so FR-23's call site is unchanged.
+-->
+<div class="dropdown network-actions" (focusout)="onFocusOut($event)">
+  <!-- `#toggleButton`, not `#toggle`: a template reference shadows a component member of the same
+       name, so `#toggle` would make `(click)="toggle()"` a call on an HTMLButtonElement. -->
+  <button
+    #toggleButton
+    type="button"
+    class="btn btn-sm dropdown-toggle"
+    [class.btn-outline-danger]="scope() === 'selection'"
+    [class.btn-outline-secondary]="scope() === 'row'"
+    [id]="toggleId"
+    aria-haspopup="menu"
+    [attr.aria-controls]="menuId"
+    [attr.aria-expanded]="open()"
+    [attr.aria-label]="accessibleName()"
+    [attr.aria-busy]="scope() === 'row' && busy() ? 'true' : null"
+    [disabled]="!enabled()"
+    [title]="
+      scope() === 'row'
+        ? 'Export, duplicate or delete this network. Opening it in the editor is the button beside this one (FR-26).'
+        : enabled()
+          ? 'Act on the selected networks. The per-row actions are unchanged (FR-23).'
+          : 'Tick one or more networks in the table to enable this (FR-23).'
+    "
+    (click)="toggle()"
+    (keydown)="onToggleKeydown($event)"
+  >
+    @if (scope() === 'row' && busy()) {
+      <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+    } @else {
+      {{ label() }}
+    }
+  </button>
+
+  @if (open()) {
+    <div
+      #menu
+      class="dropdown-menu show network-actions__menu"
+      [class.network-actions__menu--anchored]="scope() === 'row'"
+      [style.top.px]="anchor()?.top"
+      [style.bottom.px]="anchor()?.bottom"
+      [style.right.px]="anchor()?.right"
+      [id]="menuId"
+      role="menu"
+      [attr.aria-labelledby]="toggleId"
+      (keydown)="onMenuKeydown($event)"
+    >
+      @if (scope() === 'selection') {
+        <button
+          type="button"
+          class="dropdown-item text-danger"
+          role="menuitem"
+          [disabled]="!canDelete()"
+          [title]="
+            canDelete()
+              ? 'Delete the selected networks. A network frozen by a run is not deletable and the confirmation names it separately (FR-15, FR-23).'
+              : 'Waiting for the project - the deletion is confirmed by typing the owning project’s name (FR-15).'
+          "
+          (click)="choose('delete')"
+        >
+          Delete…
+        </button>
+
+        <div class="dropdown-divider"></div>
+
+        <!--
+          FR-24. `GET /projects/{id}/archive?networkIds=` narrows the ordinary archive to
+          the selected networks, and restoring it through `POST /projects/archive/import` yields a
+          separate project holding exactly them. It copies and never moves.
+
+          Not gated on anything: a frozen network exports exactly like an editable one - the freeze
+          is about *edits*, and a copy is not one - so unlike Delete above, this entry has no
+          precondition to wait for and no split to show.
+        -->
+        <button
+          type="button"
+          class="dropdown-item"
+          role="menuitem"
+          title="Export the selected networks as one standalone project archive (FR-24). It copies and never moves: the networks, their runs and their results stay here."
+          (click)="choose('export')"
+        >
+          Export as a project…
+        </button>
+
+        <!--
+          FR-25. Opens a **new browser window** at `/projects/:id/comparison/structure?ids=…`, laid out
+          as ⌈√n⌉ columns of read-only FR-22 miniatures - one per selected network - sharing a by-name
+          element selection. The ids are on the query string, so the
+          window is a real address rather than a handoff: it survives a reload and can be bookmarked.
+
+          Gated on the count alone. The freeze is irrelevant here for the same reason it is irrelevant
+          to the export above - it is about *edits*, and this view is read-only throughout.
+        -->
+        <button
+          type="button"
+          class="dropdown-item"
+          role="menuitem"
+          [disabled]="compareBlocked() !== null"
+          [attr.aria-describedby]="hintId"
+          [title]="
+            compareBlocked() ??
+            'Open the selected networks side by side in a new window - one read-only miniature per pane, with a shared by-name element selection (FR-25).'
+          "
+          (click)="choose('compare')"
+        >
+          Compare side by side…
+        </button>
+
+        <!--
+          The cap is stated here, where the action is offered - not only after the window has opened
+          (FR-25). Where the selection is already outside it, the blocker says which way and by how
+          many; otherwise the plain limit, so a reader ticking a seventh row has been told before they
+          find out.
+
+          `role="none"` because a `menu` may only contain menu items, and this is a sentence; it stays
+          readable to a screen reader through the entry's `aria-describedby` above, which is the right
+          relationship anyway - it describes that action rather than being one.
+        -->
+        <p [id]="hintId" role="none" class="dropdown-item-text network-actions__hint">
+          {{ compareBlocked() ?? capSentence }}
+        </p>
+      } @else {
+        <!--
+          The row's secondary actions (FR-26). The row's
+          controls grew one at a time - open, then three export formats, then delete - until opening
+          the network was one button among five with no visual claim to being the first. Open in
+          editor stays a button beside this menu; everything else is here.
+        -->
+
+        <!--
+          FR-29. `PUT /networks/{id}` - the name in place, from the table, where the researcher has
+          seen what the network contains. First in the menu because it is what a reader reaches for
+          most after a batch import, which names every network after its file (FR-28):
+          `Baseline_v3_FINAL.xlsx` becomes a row in a table that will outlive the file.
+
+          Gated on nothing, frozen rows included, and that is the headline case rather than an edge
+          one. The freeze covers what a result was computed *from* - nodes, links,
+          per-product rows, the time base - and a name is none of those: it is not an input to any
+          metric and appears in no result. A network with runs against it renames like any other, so
+          unlike Delete below there is nothing here to withdraw and no reason to show.
+        -->
+        <button
+          type="button"
+          class="dropdown-item"
+          role="menuitem"
+          title="Rename this network in place (FR-29). Its baseline flag travels with the name - the two are replaced together - and nothing structural changes. A frozen network renames like any other."
+          (click)="chooseRename()"
+        >
+          Rename…
+        </button>
+
+        <div class="dropdown-divider"></div>
+
+        <h6 role="none" class="dropdown-header">Export</h6>
+        <button
+          type="button"
+          class="dropdown-item"
+          role="menuitem"
+          title="Download the full XML document: everything the network holds, canvas layout included, in one self-describing file."
+          (click)="chooseExport('xml')"
+        >
+          Export XML
+        </button>
+        <button
+          type="button"
+          class="dropdown-item"
+          role="menuitem"
+          title="Download as one .xlsx workbook in the canonical import schema. Edit it and re-import to create a variant."
+          (click)="chooseExport('xlsx')"
+        >
+          Export XLSX
+        </button>
+        <button
+          type="button"
+          class="dropdown-item"
+          role="menuitem"
+          title="Download the five canonical CSV files as a zip."
+          (click)="chooseExport('csv')"
+        >
+          Export CSV
+        </button>
+
+        <div class="dropdown-divider"></div>
+
+        <!--
+          FR-26. `POST /networks/{id}/clone` - the request the editor's fork prompt has always made,
+          with a second caller. The copy is a `CONFIGURATION_VARIANT` recorded against this network,
+          so it appears in the lineage beneath the table under the one it came from: a duplicate is
+          a variant, not an untracked copy.
+
+          Gated on nothing, frozen networks included. The freeze covers *edits*, and a clone reads its
+          source - the same rule FR-24's export follows one scope up, and the reason a researcher
+          forks a frozen network is usually that it has results worth building on.
+        -->
+        <button
+          type="button"
+          class="dropdown-item"
+          role="menuitem"
+          title="Fork this network into a configuration variant (FR-26). It is recorded against this network and appears in the lineage under it; a frozen network duplicates like any other."
+          (click)="chooseDuplicate()"
+        >
+          Duplicate network…
+        </button>
+
+        <div class="dropdown-divider"></div>
+
+        <!--
+          FR-15, unchanged by having moved: the confirmation still asks for the owning project's
+          name typed exactly, and a network frozen by a run offers no delete **at all** - the reason
+          is shown rather than the control being silently disabled. That is why the frozen
+          case is a sentence here and not a greyed entry.
+        -->
+        @if (!deleteAbsent()) {
+          <button
+            type="button"
+            class="dropdown-item text-danger"
+            role="menuitem"
+            [disabled]="!canDelete()"
+            [title]="
+              canDelete()
+                ? 'Delete this network and everything in it. You will be asked to type the owning project’s name first (FR-15). This cannot be undone.'
+                : 'Waiting for the project - the deletion is confirmed by typing the owning project’s name (FR-15).'
+            "
+            (click)="chooseDelete()"
+          >
+            Delete…
+          </button>
+        } @else {
+          <p role="none" class="dropdown-item-text network-actions__hint">
+            <strong>No delete.</strong> A simulation run has frozen this network. Its
+            results are only meaningful beside the exact structure that produced them, so it cannot
+            be deleted while they exist. Discard its runs from the editor’s frozen banner -
+            <em>Unlock…</em> (FR-20) - and the delete comes back. Everything above still works:
+            exporting and duplicating read the network rather than changing it.
+          </p>
+        }
+      }
+    </div>
+  }
+</div>

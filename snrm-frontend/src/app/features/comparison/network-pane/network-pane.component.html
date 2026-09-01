@@ -1,0 +1,244 @@
+<!--
+  One pane of the side-by-side window (FR-25).
+
+  Identity, then the read-only miniature of FR-22, then this network's topological suite - "a shape
+  and its structural numbers read together". Nothing here edits, runs or deletes.
+-->
+<article class="pane card h-100">
+  <!-- ------------------------------------------------------------------ identity -->
+  <header class="pane__head card-header bg-white">
+    @if (pane().network; as network) {
+      <h2 class="pane__title h6 mb-1">
+        {{ network.name }}
+        <span class="badge text-bg-light pane__version">v{{ network.version }}</span>
+      </h2>
+      <p class="pane__badges mb-0">
+        @if (network.baseline) {
+          <span
+            class="badge text-bg-primary"
+            title="The project's baseline - the configuration the others are variants of."
+          >
+            Baseline
+          </span>
+        }
+        @if (!network.editable) {
+          <span
+            class="badge text-bg-secondary"
+            title="Frozen by a completed simulation run, so its structure is exactly what that run was computed against. Nothing in this window would edit it in any case."
+          >
+            Frozen
+          </span>
+        } @else {
+          <span
+            class="badge text-bg-light border"
+            title="No simulation run holds this network, so it is still editable in the editor."
+          >
+            Editable
+          </span>
+        }
+        <span class="pane__clock text-body-secondary">
+          {{ network.horizonPeriods }} periods ×
+          {{ network.periodLength.value }} {{ network.periodLength.unit | lowercase }}
+        </span>
+      </p>
+    } @else if (pane().missing) {
+      <h2 class="pane__title h6 mb-1">Network #{{ pane().networkId }}</h2>
+      <p class="pane__badges mb-0">
+        <span class="badge text-bg-warning">Not in this project</span>
+      </p>
+    } @else {
+      <h2 class="pane__title h6 mb-1 placeholder-glow">
+        <span class="placeholder col-6"></span>
+      </h2>
+      <p class="pane__badges mb-0 text-body-secondary small">Reading this network’s identity…</p>
+    }
+  </header>
+
+  <div class="card-body pane__body">
+    @if (pane().missing) {
+      <!--
+        A URL is a durable thing and a network is not: a link bookmarked last month may name one
+        that has since been deleted (FR-15), or one of another project. The pane says which rather
+        than drawing an empty box.
+      -->
+      <p class="text-body-secondary small mb-0">
+        This id is not one of this project’s networks. It may have been deleted, or the link may
+        name a network of another project. The other panes are unaffected.
+      </p>
+    } @else {
+      <!--
+        The shared by-name selection, answered by *this* network. Present or absent, it is stated:
+        a pane that merely failed to highlight anything would read as a pane nobody had clicked.
+      -->
+      @if (selectionLabel(); as selected) {
+        <!--
+          The absence is the primary branch because `as` is only allowed there, and the three states
+          are mutually exclusive anyway: a pane that has the element has no absence sentence, and a
+          pane that has not answered has neither.
+        -->
+        @if (absence(); as sentence) {
+          <p class="pane__match pane__match--absent mb-2">
+            <span aria-hidden="true">○</span> {{ sentence }}
+          </p>
+        } @else if (present()) {
+          <p class="pane__match pane__match--present mb-2">
+            <span aria-hidden="true">●</span> {{ selected }} is here.
+          </p>
+        } @else {
+          <!-- No answer yet, which is not the same as answering *no* (`paneHasAnswered`). -->
+          <p class="pane__match pane__match--pending mb-2">
+            <span aria-hidden="true">◌</span> Still reading this network, so it cannot say yet
+            whether it has {{ selected }}.
+          </p>
+        }
+      }
+
+      <!--
+        The miniature of FR-22, imported from `features/simulations` rather than reimplemented. No
+        element series and no note: there is no run behind a structural comparison, and a tint would
+        be a claim about a simulation nobody ran. No legend and no scope line either - the window
+        prints the legend once and this pane says something better about the selection just above.
+      -->
+      <app-network-inspector
+        [nodes]="pane().nodes"
+        [links]="pane().links"
+        [structureError]="pane().structureError"
+        [loading]="pane().structureLoading"
+        loadingLabel="Reading this network…"
+        [selection]="miniSelection()"
+        [showLegend]="false"
+        [showSelectionLine]="false"
+        (nodePicked)="onNodePicked($event)"
+        (linkPicked)="onLinkPicked($event)"
+        (networkPicked)="onCleared()"
+      />
+
+      <p class="pane__counts text-body-secondary">
+        {{ pane().nodes.length }} nodes · {{ pane().links.length }} links
+      </p>
+
+      <!-- ------------------------------------------- the topological suite (FR-27) -->
+      <section class="pane__suite" [attr.aria-label]="'Topological metrics of ' + label()">
+        <!--
+          The suite's own header, and the pane's own collapse control (FR-27). A real <button> with
+          `aria-expanded` and an `aria-controls` naming the region below it - the disclosure the
+          actions-menu toggle already uses in this repository - and its accessible name says which
+          network, because a full window would otherwise offer twelve buttons all called the same
+          thing.
+
+          It is the *suite's* header rather than the card's on purpose: the miniature never
+          collapses, and a control sitting beside the name and badges would read as offering to fold
+          the whole pane away. The shape is what the window exists to show.
+        -->
+        <h3 class="pane__suite-head">
+          <button
+            type="button"
+            class="pane__suite-toggle"
+            [id]="suiteToggleId"
+            [attr.aria-expanded]="!suiteCollapsed()"
+            [attr.aria-controls]="suiteId"
+            [attr.aria-label]="
+              (suiteCollapsed() ? 'Show' : 'Hide') + ' the structural metrics of ' + label()
+            "
+            title="The structural suite. Collapsing hides these numbers and keeps them - nothing is re-read when you open it again, and the miniature never collapses."
+            (click)="suiteToggled.emit()"
+          >
+            <span class="pane__suite-chevron" aria-hidden="true">{{
+              suiteCollapsed() ? '▸' : '▾'
+            }}</span>
+            Structural metrics
+          </button>
+        </h3>
+
+        <!--
+          Hidden rather than removed while collapsed, for two reasons that point the same way: the
+          `aria-controls` above must name an element that exists, and keeping the rendered numbers in
+          the document is the plainest statement of what a collapse *is* here - a display state over
+          data already held. The request was made when the window opened whatever this pane looked
+          like (`SideBySideStore.toggleSuite`).
+        -->
+        <div class="pane__suite-body" [id]="suiteId" [hidden]="suiteCollapsed()">
+          <!--
+            The failure is the primary branch, since `as` is only allowed there. Nothing is reordered
+            by that: the store never leaves a pane both loading and failed - every write of one sets
+            the other.
+
+            The numbers fail; the picture stays. A suite that would not compute is no reason to
+            withhold a network's shape (see the store).
+          -->
+          @if (pane().suiteError; as message) {
+            <p class="pane__note pane__note--warn mb-0">{{ message }}</p>
+          } @else if (pane().suiteLoading) {
+            <p class="pane__note mb-0">
+              <span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>
+              Computing the structural suite - one maximum-flow per node…
+            </p>
+          } @else if (!pane().suite.length) {
+            <p class="pane__note mb-0">No structural metrics were returned for this network.</p>
+          } @else if (everythingHidden()) {
+            <!--
+              FR-31: the reader has unticked every metric. Deliberately a different sentence from the
+              one above it - that one is a fact about this network, this one is the consequence of a
+              control above the grid, and a pane that reported the second as the first would be
+              blaming the data for the filter.
+            -->
+            <p class="pane__note mb-0">{{ allMetricsHidden }}</p>
+          } @else {
+            @if (suiteRows().length) {
+              <dl class="pane__metrics">
+                @for (row of suiteRows(); track row.code) {
+                  <div class="pane__metric" [title]="row.meaning">
+                    <dt class="pane__metric-label">{{ row.label }}</dt>
+                    <dd class="pane__metric-value">{{ row.formatted }}</dd>
+                  </div>
+                }
+              </dl>
+            }
+
+            <!--
+              The criticality table is `NODE_CRITICALITY` itself - per-node, so it is never one of
+              the rows above - and it therefore answers the checkbox row on its own (FR-31).
+            -->
+            @if (criticalityRows().length) {
+              <!-- h4: the suite's disclosure heading is the h3 above it, under the pane's own h2. -->
+              <h4 class="pane__subtitle">Most critical nodes</h4>
+              <table class="pane__criticality">
+                <tbody>
+                  @for (row of criticalityRows(); track row.nodeId) {
+                    <!--
+                      A second way into the same by-name selection: the numbers and the picture
+                      answer one gesture, so clicking the worst node here lights it in every other
+                      pane too.
+                    -->
+                    <tr
+                      class="pane__criticality-row"
+                      tabindex="0"
+                      [title]="'Select ' + row.name + ' in every pane'"
+                      (click)="onCriticalityPicked(row.name)"
+                      (keydown.enter)="onCriticalityPicked(row.name)"
+                      (keydown.space)="onCriticalityPicked(row.name)"
+                    >
+                      <th scope="row" class="pane__criticality-name">{{ row.name }}</th>
+                      <td class="pane__bar-cell">
+                        <span
+                          class="pane__bar"
+                          [style.width.%]="row.share * 100"
+                          aria-hidden="true"
+                        ></span>
+                      </td>
+                      <td class="pane__criticality-value">{{ percent(row.value) }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+              <p class="pane__note mb-0">
+                Share of serviceable demand this network loses without that node. The bars are
+                scaled within this pane; the percentages are what compare across panes.
+              </p>
+            }
+          }
+        </div>
+      </section>
+    }
+  </div>
+</article>

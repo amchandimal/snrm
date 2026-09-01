@@ -1,0 +1,25 @@
+// The diagnostics tables moved to `import-report-view.component.scss` with the markup they style,
+// when FR-28 made a report something this step can draw once per file.
+
+// One file of a batch. The left edge is the status, so a partial batch is scannable down the page
+// rather than only readable at the top - the same reason the summary has a PARTIAL verdict of its
+// own (`batch-plan.ts`).
+.batch-file {
+  border-left: 4px solid var(--bs-border-color);
+
+  &[data-status='CREATED'] {
+    border-left-color: var(--bs-success);
+  }
+
+  &[data-status='REFUSED'] {
+    border-left-color: var(--bs-danger);
+  }
+
+  &[data-status='NOT_ATTEMPTED'] {
+    border-left-color: var(--bs-secondary);
+  }
+
+  summary {
+    cursor: pointer;
+  }
+}

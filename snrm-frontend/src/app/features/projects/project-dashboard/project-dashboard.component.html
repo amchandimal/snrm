@@ -1,0 +1,912 @@
+<div class="container app-view">
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+      <li class="breadcrumb-item"><a routerLink="/projects">Projects</a></li>
+      <li class="breadcrumb-item active" aria-current="page">
+        {{ project()?.name ?? 'Project' }}
+      </li>
+    </ol>
+  </nav>
+
+  <div class="d-flex align-items-baseline justify-content-between mb-3">
+    <div>
+      <h1 class="h3 mb-1">
+        {{ project()?.name ?? 'Project' }}
+        @if (projectId(); as id) {
+          <span class="id-chip ms-2">#{{ id }}</span>
+        }
+      </h1>
+      <p class="text-body-secondary mb-0">
+        Networks in this project. A network is one configuration; variants of it share a name and
+        take the next version number.
+      </p>
+    </div>
+    <div class="d-flex gap-2">
+      <a
+        class="btn btn-sm btn-primary"
+        title="Evaluate one configuration against one disruption scenario over its horizon"
+        [routerLink]="simulationsLink()"
+        [class.disabled]="!projectId()"
+      >
+        Run simulation
+      </a>
+      <a
+        class="btn btn-sm btn-outline-primary"
+        title="Variants × metrics, with best-in-row highlighting and the lever change that explains each column (FR-10)"
+        [routerLink]="comparisonLink()"
+        [class.disabled]="!projectId()"
+      >
+        Compare variants
+      </a>
+      <a
+        class="btn btn-sm btn-outline-primary"
+        title="Disruption scenarios belong to the project, not to one network, so the same story can be replayed against every variant"
+        [routerLink]="scenariosLink()"
+        [class.disabled]="!projectId()"
+      >
+        Disruption scenarios
+      </a>
+      <a
+        class="btn btn-sm"
+        [class.btn-outline-primary]="!products.isEmpty()"
+        [class.btn-warning]="products.isEmpty()"
+        title="The project's product catalogue. Every configuration variant shares it, which is what makes their cost metrics comparable"
+        [routerLink]="productsLink()"
+        [class.disabled]="!projectId()"
+      >
+        Products
+        @if (products.state() === 'ready') {
+          <span class="badge text-bg-light ms-1">{{ products.products().length }}</span>
+        }
+      </a>
+      <a
+        class="btn btn-sm btn-outline-primary"
+        title="Import a network from the canonical CSV set, an Excel workbook, or an SNRM XML document"
+        [routerLink]="importLink()"
+        [class.disabled]="!projectId()"
+      >
+        Import network (CSV · Excel · XML)
+      </a>
+      <button
+        type="button"
+        class="btn btn-sm btn-outline-secondary"
+        [disabled]="store.isLoading() || !projectId()"
+        (click)="store.load(projectId()!)"
+      >
+        Refresh
+      </button>
+    </div>
+  </div>
+
+  @if (projectError(); as message) {
+    <div class="alert alert-danger" role="alert">{{ message }}</div>
+  }
+
+  @if (store.error(); as message) {
+    <div class="alert alert-danger d-flex justify-content-between align-items-start" role="alert">
+      <span>{{ message }}</span>
+      <button type="button" class="btn-close" aria-label="Dismiss" (click)="store.dismissError()"></button>
+    </div>
+  }
+
+  @if (exports.error(); as message) {
+    <div class="alert alert-danger d-flex justify-content-between align-items-start" role="alert">
+      <span>{{ message }}</span>
+      <button type="button" class="btn-close" aria-label="Dismiss" (click)="exports.dismissError()"></button>
+    </div>
+  }
+
+  @if (archives.error(); as message) {
+    <div class="alert alert-danger d-flex justify-content-between align-items-start" role="alert">
+      <span>{{ message }}</span>
+      <button type="button" class="btn-close" aria-label="Dismiss" (click)="archives.dismissError()"></button>
+    </div>
+  }
+
+  <!-- The empty catalogue is a blocker three screens away, so it is said here. -->
+  @if (products.isEmpty()) {
+    <div class="alert alert-warning" role="alert">
+      <p class="mb-1 fw-semibold">This project has no products yet.</p>
+      <p class="mb-0 small">
+        Demand is recorded per product at a node, so until the catalogue holds one, no node can be
+        given demand and a simulation is refused with <code>NETWORK_HAS_NO_DEMAND</code>.
+        <a [routerLink]="productsLink()">Add a product</a>, or
+        <a [routerLink]="importLink()">import a network</a> - its <code>products</code> sheet fills
+        the catalogue for you.
+      </p>
+    </div>
+  }
+
+  <div class="card shadow-sm mb-4">
+    <div class="card-body">
+      <form class="row g-2 align-items-start" [formGroup]="newNetwork" (ngSubmit)="createNetwork()" novalidate>
+        <div class="col-12 col-sm">
+          <label class="form-label visually-hidden" for="new-network">New network name</label>
+          <input
+            id="new-network"
+            type="text"
+            class="form-control"
+            placeholder="New network name, e.g. Baseline"
+            formControlName="name"
+            [class.is-invalid]="newNetwork.controls.name.touched && newNetwork.controls.name.invalid"
+          />
+          <div class="invalid-feedback">A name is required, up to 160 characters.</div>
+        </div>
+        <div class="col-12 col-sm-auto d-flex align-items-center">
+          <div class="form-check mt-2 mt-sm-0 me-sm-3">
+            <input
+              class="form-check-input"
+              type="checkbox"
+              id="new-network-baseline"
+              formControlName="baseline"
+              [attr.disabled]="store.hasBaseline() ? '' : null"
+            />
+            <label class="form-check-label small" for="new-network-baseline">
+              Baseline
+              @if (store.hasBaseline()) {
+                <span class="text-body-secondary">(already set)</span>
+              }
+            </label>
+          </div>
+        </div>
+        <div class="col-12 col-sm-auto">
+          <button type="submit" class="btn btn-primary" [disabled]="store.creating()">
+            @if (store.creating()) {
+              <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+            }
+            Create network
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!--
+    What the last duplicate did (FR-26).
+
+    A sentence rather than a navigation: "the researcher is working in the table", so the copy is
+    reported where they are standing rather than by opening it. It names both networks and the edge
+    between them, because the edge is the whole difference between this and an untracked copy - and
+    it points at the lineage panel below, which is where that edge is drawn.
+  -->
+  @if (store.duplicated(); as made) {
+    <div class="card shadow-sm mb-3 border-info" role="status">
+      <div class="card-body py-3 d-flex justify-content-between align-items-start gap-2">
+        <div>
+          <p class="mb-1 fw-semibold">Duplicated.</p>
+          <p class="mb-0 small text-body-secondary">{{ duplicateOutcome(made.base, made.copy) }}</p>
+        </div>
+        <button
+          type="button"
+          class="btn-close"
+          aria-label="Dismiss"
+          (click)="store.dismissDuplicated()"
+        ></button>
+      </div>
+    </div>
+  }
+
+  <!--
+    What the last rename did (FR-29).
+
+    A sentence rather than a navigation, like the duplicate note above, and with a reason of its
+    own: the table sorts by name, so a renamed row **moves**. A reader who pressed a button on the
+    fourth row and found the fourth row unchanged is looking at a defect until this says where it
+    went - and it also confirms the thing the reader cannot see, that the baseline flag travelled
+    with the name rather than being cleared by the request that carried it.
+  -->
+  @if (store.renamed(); as change) {
+    <div class="card shadow-sm mb-3 border-info" role="status">
+      <div class="card-body py-3 d-flex justify-content-between align-items-start gap-2">
+        <div>
+          <p class="mb-1 fw-semibold">Renamed.</p>
+          <p class="mb-0 small text-body-secondary">
+            {{ renameOutcome(change.before, change.after) }}
+          </p>
+        </div>
+        <button
+          type="button"
+          class="btn-close"
+          aria-label="Dismiss"
+          (click)="store.dismissRenamed()"
+        ></button>
+      </div>
+    </div>
+  }
+
+  <!--
+    What the last set delete actually did, per network (FR-23). Each network was accepted
+    or refused on its own terms, so this is a list and not a verdict; it is written as the sequence
+    runs, so a run abandoned part-way still leaves an accurate account of what went and what did
+    not.
+
+    Outside the table's own branch on purpose: a set delete that takes the project's last network
+    flips the page to its empty state, and a report that vanished with the rows it is reporting on
+    would be missing exactly when the deletion was largest.
+  -->
+  @if (store.deleteReport(); as report) {
+    <div
+      class="card shadow-sm mb-3"
+      [class.border-danger]="deletedCount(report) < report.length"
+      role="status"
+    >
+      <div class="card-body py-3">
+        <div class="d-flex justify-content-between align-items-start gap-2">
+          <p class="mb-0 fw-semibold">{{ deletionHeadline(report) }}</p>
+          <button
+            type="button"
+            class="btn-close"
+            aria-label="Dismiss"
+            (click)="store.dismissDeleteReport()"
+          ></button>
+        </div>
+        <ul class="list-unstyled small mb-0 mt-2">
+          @for (outcome of report; track outcome.network.id) {
+            <li class="mt-1">
+              @if (outcome.status === 'deleted') {
+                <span class="badge text-bg-success me-2">Deleted</span>
+              } @else {
+                <span class="badge text-bg-danger me-2">Refused</span>
+              }
+              <span class="fw-semibold">{{ describeNetwork(outcome.network) }}</span>
+              @if (outcome.message; as message) {
+                <span class="text-body-secondary"> - {{ message }}</span>
+              }
+              @if (outcomeNote(outcome); as note) {
+                <div class="text-body-secondary ms-5">{{ note }}</div>
+              }
+            </li>
+          }
+        </ul>
+      </div>
+    </div>
+  }
+
+  @if (store.isLoading()) {
+    <p class="text-body-secondary">Loading networks…</p>
+  } @else if (store.isEmpty()) {
+    <div class="card shadow-sm">
+      <div class="card-body text-center py-5">
+        <p class="mb-1">This project has no networks yet.</p>
+        <p class="text-body-secondary small mb-0">
+          Create one above, or
+          <a [routerLink]="importLink()">import one from CSV, Excel or XML</a>.
+        </p>
+      </div>
+    </div>
+  } @else {
+    <!--
+      The set gesture of FR-23. Above the table, because it acts on the table; disabled
+      until something is ticked, and naming the count once it is. The per-row actions below are
+      untouched - the menu answers a different question.
+    -->
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+      <app-network-actions-menu
+        [count]="store.selectedCount()"
+        [busy]="store.deletingMany() !== null || archives.busyFor() !== null"
+        [canDelete]="!!project()"
+        (deleteSelected)="askToDeleteSelection()"
+        (exportSelected)="askToExportSelection()"
+        (compareSelected)="openComparison()"
+      />
+
+      @if (store.selectedCount(); as count) {
+        <span class="text-body-secondary small">
+          {{ count }} of {{ store.networks().length }} selected
+          @if (selectionSplit().blocked.length; as frozen) {
+            · <span title="A completed simulation run holds these, so a delete would not take them (FR-15).">
+              {{ frozen }} frozen
+            </span>
+          }
+        </span>
+        <button type="button" class="btn btn-sm btn-link p-0" (click)="store.clearSelection()">
+          Clear selection
+        </button>
+      } @else {
+        <span class="text-body-secondary small">
+          Tick networks to act on several at once. Every row still carries its own actions.
+        </span>
+      }
+    </div>
+
+    <!--
+      Nothing in the selection can be deleted, so there is nothing to confirm: the sentence is said
+      here rather than behind a typed phrase for a guaranteed no-op - the judgement
+      `core/run-discard.activeRunsBlocker` already makes for a discard the server would refuse.
+    -->
+    <!--
+      The browser refused the new window (FR-25). Because the view's whole state is in its URL, the
+      address itself is the remedy - offered as a link rather than as an instruction to go and find
+      a pop-up setting.
+    -->
+    @if (blockedComparison(); as url) {
+      <div class="alert alert-warning d-flex justify-content-between align-items-start" role="alert">
+        <span class="small">
+          Your browser blocked the new window. The comparison is a real address, so you can open it
+          yourself: <a [href]="url" target="_blank" rel="noopener">open it side by side</a>.
+        </span>
+        <button
+          type="button"
+          class="btn-close"
+          aria-label="Dismiss"
+          (click)="blockedComparison.set(null)"
+        ></button>
+      </div>
+    }
+
+    @if (selectionBlocker(); as message) {
+      <div class="alert alert-warning d-flex justify-content-between align-items-start" role="alert">
+        <span class="small">{{ message }}</span>
+        <button
+          type="button"
+          class="btn-close"
+          aria-label="Dismiss"
+          (click)="selectionBlocker.set(null)"
+        ></button>
+      </div>
+    }
+
+    <div class="card shadow-sm">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th scope="col" class="select-col">
+                <input
+                  class="form-check-input mt-0"
+                  type="checkbox"
+                  id="select-all-networks"
+                  [checked]="store.allSelected()"
+                  [indeterminate]="store.partlySelected()"
+                  [disabled]="store.deletingMany() !== null"
+                  (change)="toggleAllNetworks($any($event.target).checked)"
+                />
+                <!-- A real label, visually hidden: the column has no room for a heading and a
+                     checkbox with none is a control a screen reader cannot name. -->
+                <label class="visually-hidden" for="select-all-networks">
+                  Select all networks in this project
+                </label>
+              </th>
+              <th scope="col">Network</th>
+              <th scope="col">Version</th>
+              <th scope="col">State</th>
+              <th scope="col" class="d-none d-md-table-cell">Updated</th>
+              <th scope="col" class="text-end">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (network of store.networks(); track network.id) {
+              <tr [class.table-active]="store.isSelected(network.id)">
+                <td class="select-col">
+                  <input
+                    class="form-check-input mt-0"
+                    type="checkbox"
+                    [id]="'select-network-' + network.id"
+                    [checked]="store.isSelected(network.id)"
+                    [disabled]="store.deletingMany() !== null"
+                    (change)="toggleNetwork(network, $any($event.target).checked)"
+                  />
+                  <!-- Frozen networks are selectable too: the menu's other actions (FR-24, FR-25)
+                       do not care about the freeze, and hiding them from the select-all would make
+                       the split of FR-15 invisible in the one dialog that exists to show it. -->
+                  <label class="visually-hidden" [attr.for]="'select-network-' + network.id">
+                    Select {{ network.name }} version {{ network.version }}
+                  </label>
+                </td>
+                <td>
+                  <span class="fw-semibold">{{ network.name }}</span>
+                  <span class="id-chip ms-2">#{{ network.id }}</span>
+                  <!-- The copy the last Duplicate made (FR-26). It shares its base's name and
+                       differs by a version number, which is exactly what makes it hard to pick out
+                       of a table where several rows already do. -->
+                  @if (duplicatedId() === network.id) {
+                    <span
+                      class="badge text-bg-info ms-2"
+                      title="Just duplicated from another configuration. It is a variant, so the lineage below shows it under the network it came from (FR-26)."
+                    >
+                      New copy
+                    </span>
+                  }
+                  <!-- The row the last Rename changed (FR-29). The same problem the badge above
+                       solves, from the other side: a duplicate is hard to find because it shares
+                       its base's name, and a renamed row is hard to find because the table
+                       re-sorted around its new one and the row moved. -->
+                  @if (renamedId() === network.id) {
+                    <span
+                      class="badge text-bg-info ms-2"
+                      title="Just renamed. The table sorts by name, so the row has moved to where the new name falls (FR-29)."
+                    >
+                      Renamed
+                    </span>
+                  }
+                </td>
+                <td>v{{ network.version }}</td>
+                <td>
+                  @if (network.baseline) {
+                    <span class="badge text-bg-primary me-1">Baseline</span>
+                  }
+                  @if (network.editable) {
+                    <span class="badge text-bg-success">Editable</span>
+                  } @else {
+                    <!-- The remedy is now on this row: Duplicate network in the actions menu is
+                         the same fork the editor's prompt offers (FR-26). -->
+                    <span
+                      class="badge text-bg-secondary"
+                      title="A simulation run has frozen this network. Duplicate it from the row’s actions menu - or fork it from the editor - to get an editable configuration variant (FR-26)."
+                    >
+                      Frozen
+                    </span>
+                  }
+                </td>
+                <td class="d-none d-md-table-cell text-body-secondary small">
+                  {{ network.updatedAt | date: 'medium' }}
+                </td>
+                <!--
+                  A row is one action and a menu (FR-26). **Open in editor stays a
+                  button** - it is what a reader does most often, and until now it was one of five
+                  controls with no visual claim to being the first. The three exports,
+                  Duplicate network and Delete are behind the menu beside it, which is
+                  `network-actions-menu` in its `row` scope: the same implementation as the set menu
+                  above the table, not a second dropdown with its own keyboard handling.
+
+                  Not a `.btn-group`: the group joins the borders of its direct button children, and
+                  the menu is a component with a wrapper of its own. Beside it rather than fused to
+                  it also happens to be the right reading - one primary action, then everything
+                  else.
+                -->
+                <td class="text-end text-nowrap">
+                  <div class="d-inline-flex align-items-center gap-1">
+                    <a class="btn btn-sm btn-primary" [routerLink]="editorLink(network)">
+                      Open in editor
+                    </a>
+                    <app-network-actions-menu
+                      [scope]="'row'"
+                      [network]="network"
+                      [busy]="
+                        exports.busyFor() === network.id ||
+                        store.duplicating() === network.id ||
+                        store.renaming() === network.id ||
+                        store.deleting() === network.id ||
+                        store.deletingMany() !== null
+                      "
+                      [canDelete]="!!project() && store.deleting() === null"
+                      (renameRequested)="askToRename(network)"
+                      (exportRequested)="exportNetwork(network, $event)"
+                      (duplicateRequested)="askToDuplicate(network)"
+                      (deleteRequested)="askToDelete(network)"
+                    />
+                  </div>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  }
+
+  <!--
+    The variant provenance tree (FR-09).
+
+    Rendered only when something was actually forked. With no variants it would be the table above
+    with the columns removed, and a panel that says nothing is worse than no panel; the fork prompt
+    in the editor is where a researcher meets the feature.
+  -->
+  @if (provenance.isLoading()) {
+    <p class="text-body-secondary small mt-3 mb-0">Reading how these configurations were derived…</p>
+  } @else if (provenance.state() === 'error') {
+    <p class="text-body-secondary small mt-3 mb-0">
+      {{ provenance.error() }}
+      <button type="button" class="btn btn-link btn-sm p-0 align-baseline" (click)="reloadProvenance()">
+        Try again
+      </button>
+    </p>
+  } @else if (provenance.hasForks()) {
+    <div class="card shadow-sm mt-4">
+      <div class="card-header bg-white">
+        <h2 class="h6 mb-1">Where these configurations came from</h2>
+        <p class="text-body-secondary small mb-0">
+          Each indented row was forked from the one it hangs under, carrying the note recorded at the
+          fork. This is the lineage the
+          <a [routerLink]="comparisonLink()">comparison view</a> annotates its columns from - a
+          version number alone does not say which configuration a variant was derived from.
+        </p>
+      </div>
+
+      @if (provenance.partial()) {
+        <div class="alert alert-warning small rounded-0 border-start-0 border-end-0 mb-0" role="alert">
+          Part of the lineage could not be read, so a configuration shown at the top level may in fact
+          have been forked from another.
+          <button type="button" class="btn btn-link btn-sm p-0 align-baseline" (click)="reloadProvenance()">
+            Try again
+          </button>
+        </div>
+      }
+
+      <ul class="provenance list-unstyled mb-0">
+        @for (row of provenanceRows(); track row.entry.network.id) {
+          <li class="provenance__row">
+            <!-- Decorative: every row states its parent in words below, so the lines are the fast
+                 path for a sighted reader and never the only one. -->
+            <span class="provenance__glyphs" aria-hidden="true">
+              @for (rail of row.entry.rails; track $index) {
+                <span class="provenance__rail" [class.provenance__rail--on]="rail"></span>
+              }
+              @if (row.entry.depth > 0) {
+                <span class="provenance__elbow" [class.provenance__elbow--last]="row.entry.last"></span>
+              }
+            </span>
+
+            <div class="provenance__body">
+              <div class="provenance__title">
+                <a class="fw-semibold" [routerLink]="editorLink(row.entry.network)">
+                  {{ row.entry.network.name }} v{{ row.entry.network.version }}
+                </a>
+                <span class="id-chip">#{{ row.entry.network.id }}</span>
+                @if (row.entry.network.baseline) {
+                  <span class="badge text-bg-primary">Baseline</span>
+                }
+                @if (!row.entry.network.editable) {
+                  <span
+                    class="badge text-bg-secondary"
+                    title="A simulation run has frozen this network. Fork it into a configuration variant to edit."
+                  >
+                    Frozen
+                  </span>
+                }
+                @if (row.search) {
+                  <span
+                    class="badge text-bg-info"
+                    title="Persisted by the Phase 2 configuration search as an evaluated candidate, not forked by hand."
+                  >
+                    Search
+                  </span>
+                }
+                @if (row.entry.childCount > 0) {
+                  <span class="text-body-secondary small">
+                    {{ row.entry.childCount }}
+                    {{ row.entry.childCount === 1 ? 'variant' : 'variants' }} forked from it
+                  </span>
+                }
+              </div>
+
+              @if (row.entry.parent; as parent) {
+                <p class="provenance__from small text-body-secondary mb-0">
+                  Forked from {{ parent.name }} v{{ parent.version }}
+                  @if (row.entry.variant; as variant) {
+                    <span>· {{ variant.createdAt | date: 'mediumDate' }}</span>
+                  }
+                </p>
+              } @else {
+                <p class="provenance__from small text-body-secondary mb-0">
+                  Not derived from another configuration - created here or imported.
+                </p>
+              }
+
+              @if (row.levers.length) {
+                <ul class="lever-list provenance__levers">
+                  @for (lever of row.levers; track lever.key) {
+                    <li>
+                      <span class="lever-list__key">{{ lever.key }}</span>
+                      <span class="lever-list__value">{{ lever.value }}</span>
+                    </li>
+                  }
+                </ul>
+              } @else if (row.entry.variant) {
+                <p class="provenance__levers small text-body-secondary fst-italic mb-0">
+                  No lever note was recorded at this fork, so this variant is unattributed in the
+                  comparison view.
+                </p>
+              }
+            </div>
+          </li>
+        }
+      </ul>
+    </div>
+  }
+
+  <!--
+    The project archive - export here, restore on the project list, because a restore
+    creates a new project rather than adding to this one. Its own card rather than a
+    seventh button in the header: what the file contains, and what it is *for*, is the part that
+    makes it worth pressing, and neither fits in a tooltip.
+  -->
+  <div class="card shadow-sm mt-4">
+    <div class="card-body d-flex flex-wrap justify-content-between align-items-start gap-3">
+      <div class="archive-note">
+        <h2 class="h6 mb-1">Archive this project</h2>
+        <p class="text-body-secondary small mb-1">
+          Downloads the whole experiment as one <code>.zip</code>: every network as its full XML
+          document, the product catalogue, the variant lineage, every disruption scenario with its
+          events, and every <strong>completed</strong> simulation run with its resolved parameters,
+          its seed, its metric results and its time series. Runs that failed, were cancelled or are
+          still queued are left out - they carry no results to interpret.
+        </p>
+        <p class="text-body-secondary small mb-0">
+          Nothing here is changed or removed by archiving. Restore it - into a <em>new</em> project,
+          never merged into an existing one - from
+          <a routerLink="/projects">the project list</a>. The archive records the simulation engine
+          that produced its runs, and a restore on a different engine says so rather than refusing.
+        </p>
+      </div>
+      <button
+        type="button"
+        class="btn btn-outline-primary text-nowrap"
+        title="Export the whole project - networks, scenarios and completed runs with their results - as one archive file."
+        [disabled]="!projectId() || archives.busyFor() !== null"
+        (click)="exportArchive()"
+      >
+        @if (archives.busyFor() !== null) {
+          <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+        }
+        Export project archive
+      </button>
+    </div>
+  </div>
+</div>
+
+@if (pendingDelete(); as network) {
+  <app-confirm-dialog
+    title="Delete this network?"
+    [message]="
+      'Delete ' + network.name + ' (version ' + network.version + ', #' + network.id + ') and everything in it. This cannot be undone.'
+    "
+    [details]="deleteDetails"
+    [requiredPhrase]="deletePhrase()"
+    phraseLabel="project name"
+    confirmLabel="Delete network"
+    [destructive]="true"
+    [busy]="store.deleting() !== null"
+    (confirmed)="confirmDelete()"
+    (cancelled)="cancelDelete()"
+  />
+}
+
+<!--
+  Renaming one network (FR-29).
+
+  `shared/confirm-dialog` with one field projected into its slot - the shape FR-24's export
+  confirmation and FR-26's duplicate already take.
+
+  **No `requiredPhrase` and not `destructive`.** Nothing is destroyed and nothing structural
+  changes; a rename is undone by renaming it back, and FR-15's typed discipline is sized to an act
+  with no undo.
+
+  **Nothing here says "edit".** A rename is not a structural edit (FR-29), so the dialog is
+  identical on a frozen row apart from one added detail line saying exactly
+  that. There is no fork branch, no discard branch and no gate - the three things the editor's
+  frozen banner offers, none of which applies to a label.
+
+  The trap the whole feature turns on is not visible here and is stated instead: the request carries
+  the **name and the baseline flag together**, built by `network-rename.renameRequest` from the
+  row's own state. See that module.
+-->
+@if (renamePrompt(); as prompt) {
+  <app-confirm-dialog
+    [title]="prompt.title"
+    [message]="prompt.message"
+    [details]="prompt.details"
+    [confirmLabel]="prompt.confirmLabel"
+    [busy]="store.renaming() !== null"
+    [confirmBlocked]="renameBlock() !== null"
+    (confirmed)="confirmRename()"
+    (cancelled)="cancelRename()"
+  >
+    <div class="mt-3">
+      <label class="form-label small fw-medium" for="rename-network">{{ prompt.nameLabel }}</label>
+      <input
+        id="rename-network"
+        type="text"
+        class="form-control"
+        autocomplete="off"
+        [class.is-invalid]="renameBlock()?.invalid"
+        [disabled]="store.renaming() !== null"
+        [value]="renameName()"
+        (input)="renameName.set($any($event.target).value)"
+        (keydown.enter)="confirmRename()"
+      />
+      <!--
+        The hint is always shown, and the blocker sits under it rather than replacing it. The dialog
+        *opens* blocked - the field is prefilled with the current name - so a blocker that took the
+        hint's place would mean the 160-character limit was only ever visible in the one state where
+        the reader has already gone past it.
+
+        Both halves of the blocker are shown, and shown differently: a name the server would refuse
+        is an error against the field, while "this is the name it already has" is a note. Either way
+        the reason the action is unavailable is on screen rather than left to a greyed button to
+        imply - the same rule the frozen row's missing Delete follows.
+      -->
+      <div class="form-text">{{ prompt.nameHint }}</div>
+      @if (renameBlock(); as blocked) {
+        <div [class]="blocked.invalid ? 'invalid-feedback d-block' : 'form-text fst-italic'">
+          {{ blocked.reason }}
+        </div>
+      }
+    </div>
+
+    <!--
+      A refusal, in the dialog rather than in the page banner behind it. The server's own
+      sentence verbatim, and beneath it the remedy keyed off the RFC 7807 `code` - which carries
+      most of the weight here, because a schema conflict is answered deliberately vaguely and
+      "conflicts with data that already exists" does not say which data or what to do about it.
+
+      The dialog stays open, so the name that caused this is still in the field above to be
+      corrected.
+    -->
+    @if (store.renameFailure(); as failure) {
+      <div class="alert alert-danger mt-3 mb-0 py-2" role="alert">
+        <p class="small mb-0">{{ failure.message }}</p>
+        @if (renameRefusalNote(failure.code); as note) {
+          <p class="small text-body-secondary mb-0 mt-1">{{ note }}</p>
+        }
+      </div>
+    }
+  </app-confirm-dialog>
+}
+
+<!--
+  Duplicating one network (FR-26).
+
+  `shared/confirm-dialog` with the two fields projected into its slot, rather than a dialog
+  component of its own - the same shape FR-24's export confirmation takes, and for the same reason:
+  what is particular here is the wording and two inputs, not a modal.
+
+  **No `requiredPhrase` and not `destructive`.** Nothing is deleted, moved or changed; FR-15's typed
+  discipline is sized to an act with no undo, and spending it on a copy would teach the user to type
+  through it (`confirm-dialog` treats a null phrase as "no check", which is why it is nullable).
+
+  It is deliberately not the editor's fork prompt. That modal's body is the freeze, the edit that
+  will not be replayed and FR-20's discard branch, and its name field is empty-with-a-placeholder
+  where this one is prefilled - none of which survives here, where nothing was refused. What the two
+  share is the part that has to agree: `core/fork-request.forkRequestFrom` resolves both, so an
+  untouched field means the same request either way.
+-->
+@if (duplicatePrompt(); as prompt) {
+  <app-confirm-dialog
+    [title]="prompt.title"
+    [message]="prompt.message"
+    [details]="prompt.details"
+    [confirmLabel]="prompt.confirmLabel"
+    [busy]="store.duplicating() !== null"
+    (confirmed)="confirmDuplicate()"
+    (cancelled)="cancelDuplicate()"
+  >
+    <div class="mt-3">
+      <label class="form-label small fw-medium" for="duplicate-name">{{ prompt.nameLabel }}</label>
+      <input
+        id="duplicate-name"
+        type="text"
+        class="form-control"
+        autocomplete="off"
+        [disabled]="store.duplicating() !== null"
+        [value]="duplicateName()"
+        (input)="duplicateName.set($any($event.target).value)"
+        (keydown.enter)="confirmDuplicate()"
+      />
+      <div class="form-text">{{ prompt.nameHint }}</div>
+
+      <!--
+        The lever annotation - the same note the editor's fork prompt collects,
+        because a fork whose reason is recorded is what turns the comparison matrix from a
+        scoreboard into a finding. Optional, and phrased as intent: the copy is made before it is
+        edited, so at this moment the researcher knows what they mean to change.
+      -->
+      <label class="form-label small fw-medium mt-3" for="duplicate-lever">
+        {{ prompt.leverLabel }}
+      </label>
+      <input
+        id="duplicate-lever"
+        type="text"
+        class="form-control"
+        autocomplete="off"
+        [disabled]="store.duplicating() !== null"
+        [value]="duplicateNote()"
+        [placeholder]="prompt.leverPlaceholder"
+        (input)="duplicateNote.set($any($event.target).value)"
+        (keydown.enter)="confirmDuplicate()"
+      />
+      <div class="form-text">{{ prompt.leverHint }}</div>
+    </div>
+  </app-confirm-dialog>
+}
+
+<!--
+  Deleting a set (FR-23). The typed phrase is the owning project's name - the same string
+  and the same rule as the single-network dialog above (FR-15), not a second phrase invented for
+  the plural case. What is different is what sits above the field: the selection split in two, each
+  network named, so the user confirms a split they have seen rather than discovering it after the
+  irreversible half.
+-->
+@if (pendingSetDelete(); as asked) {
+  <app-confirm-dialog
+    [title]="setDeleteConfirm().title"
+    [message]="setDeleteConfirm().message"
+    [details]="setDeleteConfirm().details"
+    [requiredPhrase]="deletePhrase()"
+    [phraseLabel]="setDeleteConfirm().phraseLabel"
+    [confirmLabel]="setDeleteConfirm().confirmLabel"
+    [destructive]="true"
+    [busy]="store.deletingMany() !== null"
+    (confirmed)="confirmSetDelete()"
+    (cancelled)="cancelSetDelete()"
+  >
+    <div class="mt-3">
+      <p class="small fw-semibold mb-1">{{ setDeleteConfirm().deletableHeading }}</p>
+      <ul class="small mb-0">
+        @for (network of asked.deletable; track network.id) {
+          <li>{{ describeNetwork(network) }}</li>
+        }
+      </ul>
+    </div>
+
+    <!-- The second group, above the phrase field: what FR-15 refuses, named rather than dropped. -->
+    @if (setDeleteConfirm().blockedHeading; as heading) {
+      <div class="mt-3 p-2 rounded bg-body-secondary">
+        <p class="small fw-semibold mb-1">{{ heading }}</p>
+        <ul class="small mb-1">
+          @for (network of asked.blocked; track network.id) {
+            <li>{{ describeNetwork(network) }}</li>
+          }
+        </ul>
+        <p class="small text-body-secondary mb-0">{{ setDeleteConfirm().blockedRemedy }}</p>
+      </div>
+    }
+
+    @if (store.deletingMany(); as progress) {
+      <p class="small text-body-secondary mt-3 mb-0" role="status">
+        Deleting one network at a time - {{ progress.done }} of {{ progress.total }} answered for.
+      </p>
+    }
+  </app-confirm-dialog>
+}
+
+<!--
+  Exporting a set as a standalone project (FR-24).
+
+  No `requiredPhrase` and not `destructive`: nothing is deleted, and spending FR-15's typed
+  discipline on a copy would teach the user to type through it. What the dialog exists for is the
+  two claims a reader cannot check from a menu entry - it copies, and a restore creates a NEW
+  project and is never a merge - in the sentences the restore card on the project list already uses
+  (`archive-rules.ts`, read through `network-selection.ts`), plus the names of the networks that are
+  about to travel.
+-->
+@if (pendingExport(); as selected) {
+  <app-confirm-dialog
+    [title]="exportConfirm().title"
+    [message]="exportConfirm().message"
+    [details]="exportConfirm().details"
+    [confirmLabel]="exportConfirm().confirmLabel"
+    [busy]="archives.busyFor() !== null"
+    (confirmed)="confirmExport()"
+    (cancelled)="cancelExport()"
+  >
+    <div class="mt-3">
+      <p class="small fw-semibold mb-1">{{ exportConfirm().listHeading }}</p>
+      <ul class="small mb-0">
+        @for (network of selected; track network.id) {
+          <li>
+            {{ describeNetwork(network) }}
+            @if (!network.editable) {
+              <span class="text-body-secondary">- frozen, and exported with its runs</span>
+            }
+          </li>
+        }
+      </ul>
+    </div>
+
+    <!--
+      What travels besides the networks. Two of the three are surprises in the generous direction -
+      a catalogue and a scenario set larger than the selection needs - and the third is a real loss,
+      so all three are said: a restored project holding an unused product reads as a defect unless
+      it was announced, and a scenario that refuses to run reads as one especially if it was not.
+    -->
+    <div class="mt-3 p-2 rounded bg-body-secondary">
+      <p class="small fw-semibold mb-1">What the file carries with them</p>
+      <ul class="small text-body-secondary mb-0">
+        @for (line of exportConfirm().carries; track line) {
+          <li>{{ line }}</li>
+        }
+      </ul>
+    </div>
+  </app-confirm-dialog>
+}

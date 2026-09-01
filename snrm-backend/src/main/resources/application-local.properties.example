@@ -1,0 +1,48 @@
+# ============================================================================
+# Profile 'local' — TEMPLATE. Copy to application-local.properties:
+#
+#   Windows : copy src\main\resources\application-local.properties.example ^
+#                  src\main\resources\application-local.properties
+#   POSIX   : cp src/main/resources/application-local.properties.example \
+#                src/main/resources/application-local.properties
+#
+# application-local.properties is git-ignored so a real password never reaches
+# the repository. This template is the version that is committed — keep it free
+# of real credentials.
+#
+# Target: a MySQL 8 server installed directly on this machine, listening on
+# localhost:3306, with the 'snrm' schema and 'snrm_app' account created by
+# db/bootstrap.sql. No Docker involved.
+# ============================================================================
+
+# ---------------------------------------------------------------------------
+# Datasource
+# ---------------------------------------------------------------------------
+spring.datasource.url=jdbc:mysql://localhost:3306/snrm?useUnicode=true&characterEncoding=utf8&connectionTimeZone=UTC&allowPublicKeyRetrieval=true&useSSL=false
+spring.datasource.driver-class-name=com.mysql.cj.jdbc.Driver
+
+# Credentials come from the environment. The values after ':' are the fallbacks
+# used when the variable is not set, so the app still starts on a machine where
+# db/bootstrap.sql was run with the password left as-is. Set the real values as
+# environment variables (see README, "Running locally") rather than editing the
+# password in here.
+spring.datasource.username=${SNRM_DB_USER:snrm_app}
+spring.datasource.password=${SNRM_DB_PASSWORD:CHANGE_ME_snrm_app_password}
+
+# Small pool: single-user research tool, plus headroom for parallel Monte Carlo
+# replications reading reference data.
+spring.datasource.hikari.maximum-pool-size=10
+spring.datasource.hikari.minimum-idle=2
+spring.datasource.hikari.connection-timeout=10000
+spring.datasource.hikari.pool-name=snrm-local-pool
+
+# ---------------------------------------------------------------------------
+# Development conveniences
+# ---------------------------------------------------------------------------
+server.port=8080
+management.endpoint.health.show-details=always
+logging.level.com.snrm=DEBUG
+logging.level.org.flywaydb=INFO
+# Uncomment to see the SQL Hibernate generates while building the entities.
+#spring.jpa.show-sql=true
+#logging.level.org.hibernate.orm.jdbc.bind=TRACE

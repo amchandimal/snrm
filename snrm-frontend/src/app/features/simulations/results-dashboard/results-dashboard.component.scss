@@ -1,0 +1,198 @@
+/* Results dashboard. */
+
+.progress {
+  height: 0.5rem;
+}
+
+/*
+  The metric cards. A grid rather than a list: the suite is fourteen values and a single column
+  turns the dashboard into a scroll, while a fixed column count would strand two cards on their own
+  row in the narrow panel.
+*/
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: 0.75rem;
+}
+
+.metric-card {
+  padding: 0.625rem 0.75rem;
+  border: 1px solid #e9ecef;
+  border-radius: 0.375rem;
+  background: #fff;
+  min-width: 0;
+}
+
+.metric-card app-ci-value {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 1.0625rem;
+}
+
+/* The "14 periods (14 days)" line, under the figure it restates. */
+.metric-card__readable {
+  margin: 0.25rem 0 0;
+  font-size: 0.75rem;
+  color: #6c757d;
+}
+
+/* ------------------------------------------------- the per-period chart grid */
+
+/*
+  Seven charts, drawn small enough to be scanned as a set. `auto-fill` rather than a fixed column
+  count for the metric grid's reason: this card is a `col-xl-8` that becomes the full width below the
+  breakpoint, and a fixed three would strand a chart alone on its own row at every other width.
+*/
+.chart-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+
+/*
+  A cell is a control - double-click enlarges it - so it takes the focus ring and suppresses text
+  selection, which is what a double-click on prose would otherwise do instead.
+*/
+.chart-cell {
+  min-width: 0;
+  padding: 0.5rem;
+  border: 1px solid #f1f3f5;
+  border-radius: 0.375rem;
+  cursor: zoom-in;
+  user-select: none;
+}
+
+.chart-cell:hover {
+  border-color: #dee2e6;
+  background: #fbfcfd;
+}
+
+.chart-cell:focus-visible {
+  outline: 2px solid #0d6efd;
+  outline-offset: 2px;
+}
+
+/*
+  The enlarged chart spans the whole grid rather than growing in place: a chart twice the width of
+  its neighbours in a shared row would reflow the rest of the set every time one was opened.
+*/
+.chart-cell--large {
+  grid-column: 1 / -1;
+  cursor: zoom-out;
+  border-color: #dee2e6;
+}
+
+/* The curve has no head of its own, unlike `series-chart`, so its cell names it. */
+.chart-cell__label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #212529;
+  margin-bottom: 0.125rem;
+}
+
+/* ---------------------------------------------------- the period cursor (FR-22) */
+
+/*
+  The transport is a band across the page rather than a panel, because what it controls is the page:
+  the curve, the element charts, the figures and the map all read the one period it writes.
+*/
+.cursor-card {
+  background: #f8f9fa;
+}
+
+/*
+  The per-period figures. A grid for the metric cards' reason - seven values in a column would turn
+  the panel into a scroll - but flatter and quieter than a card, because these are readings *of* the
+  chart above them rather than results in their own right.
+*/
+.cursor-figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+  gap: 0.5rem 1rem;
+}
+
+.cursor-figure {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 0.375rem 0.5rem;
+  border-left: 2px solid #e9ecef;
+}
+
+.cursor-figure__label {
+  font-size: 0.75rem;
+  color: #6c757d;
+}
+
+.cursor-figure__value {
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+  color: #212529;
+}
+
+/*
+  The sentence a figure needs to be read correctly - a quiet period's fill rate, an unmet count that
+  is lost rather than owed. Clamped to two lines so seven of them do not push the curve off screen;
+  the whole sentence is on the figure's own tooltip.
+*/
+.cursor-figure__hint {
+  font-size: 0.6875rem;
+  color: #6c757d;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ------------------------------------------------------- criticality table */
+
+.criticality__bar-col {
+  width: 40%;
+}
+
+/*
+  A row is a control since FR-22: clicking it scopes the page to that node, which is the same
+  selection the miniature makes. Marked rather than moved when it is the scoped one - a table that
+  re-sorted itself around the selection would lose the worst-first order the panel is read by.
+*/
+.criticality__row {
+  cursor: pointer;
+}
+
+/*
+  Painted on the cells rather than on the row: Bootstrap's table rules set a background and an inset
+  box-shadow on `td`, so a rule on the `tr` is covered by them on the browsers that collapse borders.
+*/
+.criticality__row:hover > td {
+  background: #f8f9fa;
+}
+
+.criticality__row--scoped > td {
+  background: #e7f1ff;
+}
+
+.criticality__row--scoped > td:first-child {
+  box-shadow: inset 3px 0 0 #0d6efd;
+}
+
+.criticality__track {
+  display: block;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: #f1f3f5;
+  overflow: hidden;
+}
+
+/*
+  Scaled to the worst node in this network, not to 1 - see `RunResultsStore.criticalityRows`. A
+  network with no dominant weak point should look like six comparable bars, not six empty ones.
+*/
+.criticality__fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--snrm-family-topological);
+  opacity: 0.75;
+}

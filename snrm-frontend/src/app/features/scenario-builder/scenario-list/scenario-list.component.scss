@@ -1,0 +1,8 @@
+/* The list is Bootstrap plus the one shared affordance the dashboard uses: `.id-chip` from
+   styles.scss. Nothing here overrides the table; a scenario row reads the same way a network row
+   does, deliberately, since the two sit side by side in the project. */
+
+.form-text {
+  font-size: 0.7rem;
+  margin-top: 0.125rem;
+}

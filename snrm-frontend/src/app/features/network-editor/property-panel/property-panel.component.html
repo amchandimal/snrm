@@ -1,0 +1,612 @@
+<div class="panel">
+  <!--
+    The header belongs to a *selection*, so it steps aside on the empty one: the dashboard carries
+    its own header, naming the network rather than repeating "Nothing selected" above a view whose
+    subject is the whole configuration (FR-19).
+  -->
+  @if (kind() !== 'none') {
+    <header class="panel__header">
+      <h2 class="panel__title">{{ title() }}</h2>
+      <p class="panel__subtitle">
+        @switch (kind()) {
+          @case ('node') { Node #{{ nodes()[0].id }} }
+          @case ('nodes') { Bulk edit - only the field you change is sent. }
+          @case ('link') { Link #{{ links()[0].id }} }
+          @case ('links') { Bulk edit - only the field you change is sent. }
+          @case ('mixed') { Select nodes or links on their own to edit them. }
+        }
+      </p>
+    </header>
+
+    @if (!editable()) {
+      <p class="panel__frozen">
+        This network is frozen by a simulation run. Fork a configuration variant to edit
+        it.
+      </p>
+    }
+  }
+
+  <!--
+    What the selected element did in the run being played (FR-18).
+
+    Above the attribute form and inside the same aside: the panel is already where a selected
+    element is described, so the readings sit above the fields rather than in a surface of their
+    own. The card decides for itself whether it has anything to say - playback off, or a
+    multi-selection, and it renders nothing.
+  -->
+  <app-element-inspector />
+
+  @switch (kind()) {
+    @case ('none') {
+      <!--
+        The empty selection IS the network dashboard (FR-19). Clicking empty canvas and
+        pressing Escape both land here already; no gesture is added, and the dashboard is passive,
+        so deselect-only still works by construction.
+      -->
+      <app-network-dashboard />
+    }
+
+    @case ('mixed') {
+      <p class="panel__empty">
+        The selection mixes nodes and links. They share no attributes, so there is nothing common to
+        edit - select one kind on its own.
+      </p>
+    }
+
+    @default {
+      <!-- ------------------------------------------------------------------ nodes -->
+      @if (kind() === 'node' || kind() === 'nodes') {
+        @if (kind() === 'node') {
+          <div class="field">
+            <label class="field__label" for="node-name">Name</label>
+            <input
+              #nameInput
+              id="node-name"
+              type="text"
+              class="form-control form-control-sm"
+              [disabled]="!editable()"
+              [value]="nodeField('name').value"
+              (input)="onDraft('name', $any($event.target).value)"
+              (blur)="commitNodeText('name', 'name')"
+              (keydown.enter)="commitNodeText('name', 'name')"
+            />
+            @if (errorFor('name'); as message) {
+              <span class="field__error">{{ message }}</span>
+            }
+          </div>
+        }
+
+        <div class="field">
+          <label class="field__label" for="node-type">
+            Type
+            @if (nodeField('type').mixed) { <span class="field__mixed">mixed</span> }
+          </label>
+          <select
+            id="node-type"
+            class="form-select form-select-sm"
+            [disabled]="!editable()"
+            [value]="nodeField('type').value"
+            (change)="commitNodeType($any($event.target).value)"
+          >
+            @if (nodeField('type').mixed) {
+              <option value="" disabled selected>-</option>
+            }
+            @for (profile of typeProfiles; track profile.type) {
+              <option [value]="profile.type">{{ profile.label }} ({{ profile.type }})</option>
+            }
+          </select>
+        </div>
+
+        <!-- Capacity and processing time carry their own unit. -->
+        <app-unit-value
+          label="Capacity"
+          fieldId="node-capacity"
+          [kind]="'rate'"
+          placeholder="unconstrained"
+          clearTitle="Clear back to unconstrained. Single node only: a bulk PATCH cannot clear a field."
+          [value]="nodeCapacity().value"
+          [unit]="nodeCapacity().unit"
+          [mixed]="nodeCapacity().mixed"
+          [disabled]="!editable()"
+          [clearable]="true"
+          [clearDisabled]="kind() !== 'node' || nodeCapacity().empty"
+          [hint]="rateHint(nodeCapacity())"
+          (valueCommitted)="commitNodeCapacity($event)"
+          (unitPicked)="pickNodeCapacityUnit($event)"
+          (cleared)="clearNodeField('capacity', 'capacity')"
+        />
+
+        <app-unit-value
+          label="Processing time"
+          fieldId="node-processing-time"
+          [kind]="'duration'"
+          placeholder="0"
+          [value]="nodeProcessingTime().value"
+          [unit]="nodeProcessingTime().unit"
+          [mixed]="nodeProcessingTime().mixed"
+          [disabled]="!editable()"
+          [hint]="durationHint(nodeProcessingTime())"
+          (valueCommitted)="commitNodeProcessingTime($event)"
+          (unitPicked)="pickNodeProcessingTimeUnit($event)"
+        />
+
+        <div class="field">
+          <label class="field__label" for="node-fixed-cost">
+            Fixed cost
+            @if (nodeField('fixedCost').mixed) { <span class="field__mixed">mixed</span> }
+          </label>
+          <input
+            id="node-fixed-cost"
+            type="number"
+            min="0"
+            step="any"
+            class="form-control form-control-sm"
+            [disabled]="!editable()"
+            [placeholder]="nodeField('fixedCost').mixed ? '-' : ''"
+            [value]="nodeField('fixedCost').value"
+            (input)="onDraft('fixedCost', $any($event.target).value)"
+            (blur)="commitNodeNumber('fixedCost', 'fixed cost')"
+          />
+          @if (errorFor('fixedCost'); as message) {
+            <span class="field__error">{{ message }}</span>
+          }
+        </div>
+
+        <div class="field">
+          <label class="field__label" for="node-var-cost">
+            Variable cost
+            @if (nodeField('varCost').mixed) { <span class="field__mixed">mixed</span> }
+          </label>
+          <input
+            id="node-var-cost"
+            type="number"
+            min="0"
+            step="any"
+            class="form-control form-control-sm"
+            [disabled]="!editable()"
+            [placeholder]="nodeField('varCost').mixed ? '-' : ''"
+            [value]="nodeField('varCost').value"
+            (input)="onDraft('varCost', $any($event.target).value)"
+            (blur)="commitNodeNumber('varCost', 'variable cost')"
+          />
+          @if (errorFor('varCost'); as message) {
+            <span class="field__error">{{ message }}</span>
+          }
+        </div>
+
+        <div class="field">
+          <label class="field__label" for="node-failure">
+            Failure probability
+            @if (nodeField('failureProb').mixed) { <span class="field__mixed">mixed</span> }
+          </label>
+          <input
+            id="node-failure"
+            type="number"
+            min="0"
+            max="1"
+            step="0.01"
+            class="form-control form-control-sm"
+            [disabled]="!editable()"
+            [placeholder]="nodeField('failureProb').mixed ? '-' : ''"
+            [value]="nodeField('failureProb').value"
+            (input)="onDraft('failureProb', $any($event.target).value)"
+            (blur)="commitNodeNumber('failureProb', 'failure probability')"
+          />
+          @if (errorFor('failureProb'); as message) {
+            <span class="field__error">{{ message }}</span>
+          }
+        </div>
+
+        <div class="field">
+          <label class="field__label" for="node-region">
+            Region
+            @if (nodeField('region').mixed) { <span class="field__mixed">mixed</span> }
+          </label>
+          <div class="field__row">
+            <input
+              id="node-region"
+              type="text"
+              class="form-control form-control-sm"
+              [disabled]="!editable()"
+              [placeholder]="nodeField('region').mixed ? '-' : 'none'"
+              [value]="nodeField('region').value"
+              (input)="onDraft('region', $any($event.target).value)"
+              (blur)="commitNodeText('region', 'region')"
+            />
+            <button
+              type="button"
+              class="field__clear"
+              aria-label="Clear region"
+              title="Clear the region. Single node only."
+              [disabled]="!editable() || kind() !== 'node' || nodeField('region').empty"
+              (click)="clearNodeField('region', 'region')"
+            >
+              ×
+            </button>
+          </div>
+          @if (errorFor('region'); as message) {
+            <span class="field__error">{{ message }}</span>
+          }
+        </div>
+
+        <!--
+          The caption of FR-30. Two halves with two different rules, deliberately: the
+          TEXT is single-selection - a caption is prose about *this* node, and applying one to five
+          would write the same sentence on five different things - while the CHECKBOX bulk-applies,
+          because hiding every caption at once is exactly what preparing a figure wants.
+
+          And no × button: emptying the field IS the clear. This is the one field the editor's bulk
+          PATCH can set to nothing (see `element-captions.ts`), so a second gesture for it would be
+          a control that duplicates the keyboard.
+        -->
+        <div class="field">
+          <label class="field__label" for="node-caption">
+            Caption
+            @if (kind() !== 'node') { <span class="field__mixed">one node at a time</span> }
+          </label>
+          @if (kind() === 'node') {
+            <input
+              id="node-caption"
+              type="text"
+              class="form-control form-control-sm"
+              [attr.maxlength]="captionMaxLength"
+              [disabled]="!editable()"
+              placeholder="none"
+              [value]="captionField().value"
+              (input)="onDraft('caption', $any($event.target).value)"
+              (blur)="commitCaption()"
+              (keydown.enter)="commitCaption()"
+            />
+            <span class="field__hint">
+              Drawn under the node's name in smaller, quieter type. Empty the field to remove it.
+            </span>
+          } @else {
+            <p class="field__note">
+              A caption is prose about one node, so it is written one node at a time. The
+              box below applies to all {{ nodes().length }}.
+            </p>
+          }
+          @if (errorFor('caption'); as message) {
+            <span class="field__error">{{ message }}</span>
+          }
+
+          <label class="field__check" for="node-caption-visible">
+            <input
+              id="node-caption-visible"
+              type="checkbox"
+              class="form-check-input"
+              [disabled]="!editable()"
+              [checked]="nodeCaptionVisible().checked"
+              [indeterminate]="nodeCaptionVisible().mixed"
+              (change)="commitCaptionVisible($any($event.target).checked)"
+            />
+            Show caption on canvas
+            @if (nodeCaptionVisible().mixed) { <span class="field__mixed">mixed</span> }
+          </label>
+          <span class="field__hint">An empty caption draws nothing whatever this says.</span>
+        </div>
+
+        <!-- ------------------------------------------------ per-product rows -->
+        @if (kind() === 'node') {
+          <section class="products">
+            <h3 class="products__title">Products at this node</h3>
+
+            @if (!nodeProducts().length) {
+              <p class="products__empty">
+                No per-product parameters yet. Demand makes a CUSTOMER a demand sink; inventory and
+                holding cost apply to supply-side nodes.
+              </p>
+            }
+
+            @for (row of nodeProducts(); track row.productId) {
+              <article class="products__row">
+                <header class="products__row-header">
+                  <span class="products__name">{{ row.productName }}</span>
+                  <button
+                    type="button"
+                    class="field__clear"
+                    [attr.aria-label]="'Remove ' + row.productName + ' from this node'"
+                    title="Remove this product from the node. Undo puts it back with its figures."
+                    [disabled]="!editable()"
+                    (click)="removeProduct(row)"
+                  >
+                    ×
+                  </button>
+                </header>
+
+                <app-unit-value
+                  label="Demand"
+                  [fieldId]="'np-demand-' + row.productId"
+                  [kind]="'rate'"
+                  [value]="productRate(row, 'demand').value"
+                  [unit]="productRate(row, 'demand').unit"
+                  [disabled]="!editable()"
+                  [hint]="rateHint(productRate(row, 'demand'))"
+                  (valueCommitted)="commitProductRate(row, 'demand', $event)"
+                  (unitPicked)="pickProductRateUnit(row, 'demand', $event)"
+                />
+
+                <app-unit-value
+                  label="Holding cost"
+                  [fieldId]="'np-holding-' + row.productId"
+                  [kind]="'rate'"
+                  [value]="productRate(row, 'holdingCost').value"
+                  [unit]="productRate(row, 'holdingCost').unit"
+                  [disabled]="!editable()"
+                  [hint]="rateHint(productRate(row, 'holdingCost'))"
+                  (valueCommitted)="commitProductRate(row, 'holdingCost', $event)"
+                  (unitPicked)="pickProductRateUnit(row, 'holdingCost', $event)"
+                />
+
+                <div class="field">
+                  <label class="field__label" [for]="'np-inventory-' + row.productId">
+                    Initial inventory
+                  </label>
+                  <input
+                    [id]="'np-inventory-' + row.productId"
+                    type="number"
+                    min="0"
+                    step="any"
+                    class="form-control form-control-sm"
+                    [disabled]="!editable()"
+                    [value]="productField(row, 'initialInventory')"
+                    (input)="onProductDraft(row.productId, 'initialInventory', $any($event.target).value)"
+                    (blur)="commitProductNumber(row, 'initialInventory', 'initial inventory')"
+                  />
+                  @if (productErrorFor(row.productId, 'initialInventory'); as message) {
+                    <span class="field__error">{{ message }}</span>
+                  }
+                </div>
+
+                <div class="field">
+                  <label class="field__label" [for]="'np-safety-' + row.productId">
+                    Safety stock
+                  </label>
+                  <input
+                    [id]="'np-safety-' + row.productId"
+                    type="number"
+                    min="0"
+                    step="any"
+                    class="form-control form-control-sm"
+                    [disabled]="!editable()"
+                    [value]="productField(row, 'safetyStock')"
+                    (input)="onProductDraft(row.productId, 'safetyStock', $any($event.target).value)"
+                    (blur)="commitProductNumber(row, 'safetyStock', 'safety stock')"
+                  />
+                  @if (productErrorFor(row.productId, 'safetyStock'); as message) {
+                    <span class="field__error">{{ message }}</span>
+                  }
+                </div>
+              </article>
+            }
+
+            @if (nodeProducts().length) {
+              <p class="products__note">
+                Demand and holding cost are rates and carry a unit; the two stock levels do not - a
+                quantity at an instant is not a flow.
+              </p>
+            }
+
+            @if (availableProducts().length) {
+              <div class="field products__add">
+                <label class="field__label" for="np-add">Add a product</label>
+                <div class="field__row">
+                  <select
+                    id="np-add"
+                    class="form-select form-select-sm"
+                    [disabled]="!editable()"
+                    [value]="productToAdd()"
+                    (change)="onProductPicked($any($event.target).value)"
+                  >
+                    <option value="">Choose…</option>
+                    @for (product of availableProducts(); track product.id) {
+                      <option [value]="product.id.toString()">{{ product.name }}</option>
+                    }
+                  </select>
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-outline-secondary"
+                    [disabled]="!editable() || !productToAdd()"
+                    (click)="addProduct()"
+                  >
+                    Add
+                  </button>
+                </div>
+              </div>
+            } @else if (store.products().length) {
+              <p class="products__note">
+                Every product in the project's catalogue is already on this node.
+              </p>
+            }
+
+            <!-- The catalogue is project-scoped, but an empty one dead-ends here, so one can be
+                 started from the canvas (FR-01). -->
+            @if (editable()) {
+              <div class="field products__add">
+                <label class="field__label" for="np-new">New product</label>
+                @if (!store.products().length) {
+                  <p class="products__note">
+                    This project's catalogue is empty, so there is nothing to attach. A node carries
+                    demand only through a product, and a network with no demand anywhere cannot be
+                    simulated at all.
+                  </p>
+                }
+                <div class="field__row">
+                  <input
+                    id="np-new"
+                    type="text"
+                    class="form-control form-control-sm"
+                    placeholder="Name, e.g. Gearbox"
+                    maxlength="120"
+                    [disabled]="store.creatingProduct()"
+                    [value]="newProductName()"
+                    (input)="onNewProductName($any($event.target).value)"
+                    (keyup.enter)="createAndAddProduct()"
+                  />
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-outline-primary"
+                    title="Adds the product to the project's catalogue and puts it on this node. Its unit value opens at 0 - set it on the project's Products screen."
+                    [disabled]="store.creatingProduct() || !newProductName().trim()"
+                    (click)="createAndAddProduct()"
+                  >
+                    Create
+                  </button>
+                </div>
+                @if (newProductError(); as message) {
+                  <span class="field__error">{{ message }}</span>
+                }
+              </div>
+            }
+          </section>
+        }
+      }
+
+      <!-- ------------------------------------------------------------------ links -->
+      @if (kind() === 'link' || kind() === 'links') {
+        @if (linkEndpoints(); as endpoints) {
+          <p class="panel__endpoints">
+            <strong>{{ endpoints.source }}</strong> → <strong>{{ endpoints.target }}</strong>
+            <span class="panel__endpoints-note">
+              Endpoints cannot be changed - delete the link and redraw it.
+            </span>
+          </p>
+        }
+
+        @if (warnings().length) {
+          <div class="panel__warnings">
+            @for (warning of warnings(); track warning) {
+              <span class="panel__warning">⚠ {{ warning }}</span>
+            }
+          </div>
+        }
+
+        <app-unit-value
+          label="Lead time"
+          fieldId="link-lead-time"
+          [kind]="'duration'"
+          placeholder="0"
+          [value]="linkLeadTime().value"
+          [unit]="linkLeadTime().unit"
+          [mixed]="linkLeadTime().mixed"
+          [disabled]="!editable()"
+          [hint]="durationHint(linkLeadTime())"
+          (valueCommitted)="commitLinkLeadTime($event)"
+          (unitPicked)="pickLinkLeadTimeUnit($event)"
+        />
+
+        <app-unit-value
+          label="Capacity"
+          fieldId="link-capacity"
+          [kind]="'rate'"
+          placeholder="unconstrained"
+          clearTitle="Clear back to unconstrained. Single link only."
+          [value]="linkCapacity().value"
+          [unit]="linkCapacity().unit"
+          [mixed]="linkCapacity().mixed"
+          [disabled]="!editable()"
+          [clearable]="true"
+          [clearDisabled]="kind() !== 'link' || linkCapacity().empty"
+          [hint]="rateHint(linkCapacity())"
+          (valueCommitted)="commitLinkCapacity($event)"
+          (unitPicked)="pickLinkCapacityUnit($event)"
+          (cleared)="clearLinkCapacity()"
+        />
+
+        <div class="field">
+          <label class="field__label" for="link-unit-cost">
+            Unit cost
+            @if (linkField('unitCost').mixed) { <span class="field__mixed">mixed</span> }
+          </label>
+          <input
+            id="link-unit-cost"
+            type="number"
+            min="0"
+            step="any"
+            class="form-control form-control-sm"
+            [disabled]="!editable()"
+            [placeholder]="linkField('unitCost').mixed ? '-' : ''"
+            [value]="linkField('unitCost').value"
+            (input)="onDraft('unitCost', $any($event.target).value)"
+            (blur)="commitLinkNumber('unitCost', 'unit cost')"
+          />
+          @if (errorFor('unitCost'); as message) {
+            <span class="field__error">{{ message }}</span>
+          }
+        </div>
+
+        <div class="field">
+          <label class="field__label" for="link-failure">
+            Failure probability
+            @if (linkField('failureProb').mixed) { <span class="field__mixed">mixed</span> }
+          </label>
+          <input
+            id="link-failure"
+            type="number"
+            min="0"
+            max="1"
+            step="0.01"
+            class="form-control form-control-sm"
+            [disabled]="!editable()"
+            [placeholder]="linkField('failureProb').mixed ? '-' : ''"
+            [value]="linkField('failureProb').value"
+            (input)="onDraft('failureProb', $any($event.target).value)"
+            (blur)="commitLinkNumber('failureProb', 'failure probability')"
+          />
+          @if (errorFor('failureProb'); as message) {
+            <span class="field__error">{{ message }}</span>
+          }
+        </div>
+
+        <!-- The same pair on an arc (FR-30). Its caption is drawn under the label the arc already
+             carries - the declared lead time. -->
+        <div class="field">
+          <label class="field__label" for="link-caption">
+            Caption
+            @if (kind() !== 'link') { <span class="field__mixed">one link at a time</span> }
+          </label>
+          @if (kind() === 'link') {
+            <input
+              id="link-caption"
+              type="text"
+              class="form-control form-control-sm"
+              [attr.maxlength]="captionMaxLength"
+              [disabled]="!editable()"
+              placeholder="none"
+              [value]="captionField().value"
+              (input)="onDraft('caption', $any($event.target).value)"
+              (blur)="commitCaption()"
+              (keydown.enter)="commitCaption()"
+            />
+            <span class="field__hint">
+              Drawn under the arc's lead time in smaller, quieter type. Empty the field to remove it.
+            </span>
+          } @else {
+            <p class="field__note">
+              A caption is prose about one link, so it is written one link at a time. The
+              box below applies to all {{ links().length }}.
+            </p>
+          }
+          @if (errorFor('caption'); as message) {
+            <span class="field__error">{{ message }}</span>
+          }
+
+          <label class="field__check" for="link-caption-visible">
+            <input
+              id="link-caption-visible"
+              type="checkbox"
+              class="form-check-input"
+              [disabled]="!editable()"
+              [checked]="linkCaptionVisible().checked"
+              [indeterminate]="linkCaptionVisible().mixed"
+              (change)="commitCaptionVisible($any($event.target).checked)"
+            />
+            Show caption on canvas
+            @if (linkCaptionVisible().mixed) { <span class="field__mixed">mixed</span> }
+          </label>
+          <span class="field__hint">An empty caption draws nothing whatever this says.</span>
+        </div>
+      }
+    }
+  }
+</div>

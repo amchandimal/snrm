@@ -1,0 +1,69 @@
+/* The element scope's charts (FR-22). */
+
+:host {
+  display: block;
+}
+
+.element__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+/*
+  A grid rather than a single column: a node has eight charts, and eight full-width ones turn the
+  scope into a scroll on any screen wide enough to hold two. The charts are drawn small
+  and any of them can be enlarged with a double-click, so the track is narrower and the enlarged one
+  spans the whole grid - the same grid the network scope's seven charts use, because they are the
+  same charts at the same two sizes.
+*/
+.element__charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+
+/*
+  A cell is a control - double-click enlarges it - so it takes the focus ring and suppresses text
+  selection, which is what a double-click on prose would otherwise do instead. These rules are the
+  results dashboard's own, repeated rather than shared: a component's styles are scoped to it, and a
+  global `.chart-cell` would be a third place to change when the gesture changes.
+*/
+.chart-cell {
+  min-width: 0;
+  padding: 0.5rem;
+  border: 1px solid #f1f3f5;
+  border-radius: 0.375rem;
+  cursor: zoom-in;
+  user-select: none;
+}
+
+.chart-cell:hover {
+  border-color: #dee2e6;
+  background: #fbfcfd;
+}
+
+.chart-cell:focus-visible {
+  outline: 2px solid #0d6efd;
+  outline-offset: 2px;
+}
+
+.chart-cell--large {
+  grid-column: 1 / -1;
+  cursor: zoom-out;
+  border-color: #dee2e6;
+}
+
+.element__note {
+  margin: 0.75rem 0 0;
+  font-size: 0.8125rem;
+  color: #495057;
+}
+
+.element__note--quiet {
+  color: #6c757d;
+  font-size: 0.75rem;
+}

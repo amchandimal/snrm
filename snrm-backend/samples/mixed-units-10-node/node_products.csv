@@ -1,0 +1,11 @@
+node,product,demand_value,demand_time_unit,initial_inventory,safety_stock,holding_cost_value,holding_cost_time_unit
+CUS-A,WIDGET-A,210,WEEK,0,0,0,DAY
+CUS-B,WIDGET-A,30,d,0,0,0,DAY
+CUS-C,WIDGET-A,2,hr,0,0,0,DAY
+CUS-D,WIDGET-A,140,weeks,0,0,0,DAY
+DC-NORTH,WIDGET-A,0,DAY,900,450,0.50,d
+DC-SOUTH,WIDGET-A,0,DAY,750,375,0.55,d
+DC-HUB,WIDGET-A,0,DAY,1800,900,3.20,wk
+PLT-DE,WIDGET-A,0,DAY,1200,480,0.06,h
+SUP-EU,WIDGET-A,0,DAY,3000,0,0.30,d
+SUP-ASIA,WIDGET-A,0,DAY,5000,0,1.40,weeks

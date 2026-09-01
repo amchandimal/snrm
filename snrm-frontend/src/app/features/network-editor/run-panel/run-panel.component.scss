@@ -1,0 +1,390 @@
+/* The run panel (FR-17). Field rhythm follows the other editor side panels, so the
+   columns read as one surface. */
+
+.run-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  font-size: 0.8125rem;
+}
+
+.run-panel__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.run-panel__title {
+  display: flex;
+  align-items: baseline;
+  gap: 0.375rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.run-panel__help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 50%;
+  background: #e9ecef;
+  color: #6c757d;
+  font-size: 0.6875rem;
+  cursor: help;
+}
+
+.run-panel__error {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.4375rem 0.5625rem;
+  font-size: 0.75rem;
+}
+
+.run-panel__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.run-panel__actions > .btn {
+  align-self: stretch;
+}
+
+.run-panel__scenario-row {
+  display: flex;
+  gap: 0.375rem;
+}
+
+.run-panel__scenario-row .btn {
+  flex: 0 0 auto;
+}
+
+.run-panel__scenario-row .form-select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* The warning the launcher states, restated here for the same reason: by the time a toast could
+   explain the frozen banner, the researcher has already chosen. */
+.run-panel__freeze {
+  margin: 0;
+  padding: 0.4375rem 0.5625rem;
+  border: 1px solid #ffe1a3;
+  border-radius: 0.375rem;
+  background: #fff8e6;
+  color: #8a6100;
+  font-size: 0.6875rem;
+  line-height: 1.45;
+}
+
+.run-panel__note {
+  margin: 0;
+  font-size: 0.6875rem;
+  color: #6c757d;
+  line-height: 1.45;
+}
+
+/* ---------------------------------------------- the run history (FR-21) */
+
+/* Every run of the network, newest first. A tile is a button, not a row with a link in it: the
+   whole thing is the target, because "select this run" is one gesture and a 19rem panel has no
+   room for a hit area smaller than the text it labels. */
+.run-history {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  padding-top: 0.375rem;
+  border-top: 1px solid #e9ecef;
+}
+
+.run-history__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.run-history__title {
+  display: flex;
+  align-items: baseline;
+  gap: 0.375rem;
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #495057;
+}
+
+.run-history__count {
+  padding: 0 0.3125rem;
+  border-radius: 0.625rem;
+  background: #e9ecef;
+  color: #6c757d;
+  font-size: 0.625rem;
+  font-weight: 500;
+}
+
+.run-history__refresh {
+  padding: 0;
+  font-size: 0.6875rem;
+  text-decoration: none;
+}
+
+.run-history__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  /* Forty runs must not push the report off the panel; the list scrolls, the panel does not. */
+  max-height: 14rem;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.run-history__item {
+  display: flex;
+  align-items: stretch;
+  gap: 0.125rem;
+  border: 1px solid #e9ecef;
+  border-radius: 0.375rem;
+  background: #fff;
+}
+
+/* The selection border, and nothing else - the tile's own marks (status, restored) keep their
+   channels, exactly as the canvas keeps colour for type and the border for selection. */
+.run-history__item--selected {
+  border-color: #0d6efd;
+  box-shadow: inset 0 0 0 1px #0d6efd;
+}
+
+.run-history__tile {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+  padding: 0.375rem 0.5rem;
+  border: 0;
+  border-radius: 0.375rem 0 0 0.375rem;
+  background: none;
+  text-align: left;
+}
+
+.run-history__tile:hover:not(:disabled) {
+  background: #f8f9fa;
+}
+
+.run-history__tile:disabled {
+  opacity: 0.6;
+}
+
+.run-history__when {
+  display: flex;
+  align-items: baseline;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: #212529;
+}
+
+.run-history__when-note {
+  font-size: 0.625rem;
+  font-weight: 400;
+  color: #6c757d;
+}
+
+.run-history__scenario {
+  overflow: hidden;
+  font-size: 0.6875rem;
+  color: #495057;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.run-history__marks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.625rem;
+}
+
+/* Status colours, and only where the status is not DONE - a DONE tile carries no badge at all. */
+.run-history__badge--QUEUED,
+.run-history__badge--RUNNING {
+  background: #cfe2ff;
+  color: #084298;
+}
+
+.run-history__badge--FAILED {
+  background: #f8d7da;
+  color: #842029;
+}
+
+.run-history__badge--CANCELLED {
+  background: #e9ecef;
+  color: #495057;
+}
+
+/* The archive mark: these numbers came from somewhere else. Quiet - it qualifies the
+   run rather than warning about it; the warning belongs to the deletion dialog. */
+.run-history__restored {
+  border: 1px solid #dee2e6;
+  font-weight: 500;
+}
+
+.run-history__delete {
+  flex: 0 0 auto;
+  padding: 0 0.4375rem;
+  color: #b02a37;
+  font-size: 0.75rem;
+  text-decoration: none;
+}
+
+.run-history__delete:disabled {
+  color: #adb5bd;
+}
+
+.run-panel__progress {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.run-panel__running {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin: 0;
+  font-size: 0.75rem;
+}
+
+/* The provisional block (FR-17). Amber-edged on purpose: the badge alone could scroll out of view,
+   and figures that must not be mistaken for results should not look like results. */
+.run-panel__partial {
+  padding: 0.4375rem 0.5625rem;
+  border: 1px solid #ffe1a3;
+  border-radius: 0.375rem;
+  background: #fffdf5;
+}
+
+.run-panel__partial-head {
+  margin: 0 0 0.375rem;
+  font-size: 0.6875rem;
+  color: #6c757d;
+  line-height: 1.45;
+}
+
+.run-panel__figures {
+  display: flex;
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.run-panel__figure {
+  flex: 1 1 0;
+}
+
+.run-panel__figure dt {
+  font-size: 0.625rem;
+  font-weight: 500;
+  color: #6c757d;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.run-panel__figure dd {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.run-panel__settled {
+  margin: 0;
+  padding: 0.4375rem 0.5625rem;
+  border: 1px solid #dee2e6;
+  border-radius: 0.375rem;
+  background: #f8f9fa;
+  color: #495057;
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.run-panel__settled--failed {
+  border-color: #f1aeb5;
+  background: #fdf2f3;
+  color: #842029;
+}
+
+.run-panel__report {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  padding-top: 0.375rem;
+  border-top: 1px solid #e9ecef;
+}
+
+.run-panel__report-title {
+  display: flex;
+  align-items: baseline;
+  gap: 0.375rem;
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+/* One column: the panel is ~19rem wide and a metric card needs its full width to keep the value
+   and its interval on one line. */
+.run-panel__cards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.run-panel__card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  padding: 0.375rem 0.5rem;
+  border: 1px solid #e9ecef;
+  border-radius: 0.375rem;
+  background: #fff;
+}
+
+.run-panel__card-readable {
+  margin: 0;
+  font-size: 0.6875rem;
+  color: #6c757d;
+}
+
+.run-panel__report-actions {
+  display: flex;
+  gap: 0.375rem;
+}
+
+.run-panel__compare {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.run-panel__compare-title {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #495057;
+}
+
+.run-panel__compare-link {
+  font-size: 0.75rem;
+}

@@ -1,0 +1,104 @@
+/* The resolution banner. Sits with the editor's other banners, above the canvas. */
+
+.time-banner {
+  margin: 0.5rem 0.875rem 0;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8125rem;
+}
+
+.time-banner__header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.time-banner__summary {
+  font-size: 0.75rem;
+  color: #6c4a00;
+}
+
+.time-banner__close {
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+
+.time-banner__list {
+  list-style: none;
+  margin: 0.375rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  /* Long lists stay inside the banner rather than pushing the canvas off screen. */
+  max-height: 9rem;
+  overflow-y: auto;
+}
+
+.time-banner__item {
+  border-top: 1px solid rgb(0 0 0 / 6%);
+  padding-top: 0.25rem;
+}
+
+/* A whole row is the click target: the entry selects its element. */
+.time-banner__entry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.375rem;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: 0.125rem 0;
+  color: inherit;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    text-decoration: underline;
+  }
+}
+
+.time-banner__entry--static {
+  cursor: default;
+  opacity: 0.85;
+}
+
+.time-banner__severity {
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  border-radius: 0.25rem;
+  padding: 0 0.25rem;
+}
+
+.time-banner__severity--WARNING {
+  background: #ffe8a3;
+  color: #6c4a00;
+}
+
+.time-banner__severity--ERROR {
+  background: #f8d7da;
+  color: #842029;
+}
+
+.time-banner__element {
+  font-weight: 600;
+}
+
+.time-banner__field {
+  font-size: 0.75rem;
+  color: #6c757d;
+}
+
+/* Declared beside converted - the gap between them is the finding. */
+.time-banner__numbers {
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.time-banner__message {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: #5c4b1a;
+}

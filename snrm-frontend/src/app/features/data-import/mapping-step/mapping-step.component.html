@@ -1,0 +1,257 @@
+<div class="card shadow-sm mb-3">
+  <div class="card-body">
+    <h2 class="h5 mb-3">2. Network settings</h2>
+
+    @if (store.batch()) {
+      <!--
+        FR-28: a batch takes its names from its files and chooses its baseline on the next step, so
+        neither control belongs here. A name field per row would be FR-29's rename built a second
+        time, in the place where the researcher knows least about what each file contains.
+      -->
+      <p class="text-body-secondary small mb-0">
+        <strong>{{ store.files().length }} networks, one per file, each named after its file</strong>
+        - so there is no name to type here. A name already used in this project takes the
+        next version number, and names are editable afterwards from the project’s network table
+        (FR-29). Which file is the <strong>baseline</strong>, and what each of the others is, is the
+        next step. The time base below applies to <strong>every</strong> file.
+      </p>
+    } @else {
+    <div class="row g-3 align-items-start">
+      <div class="col-12 col-md-6">
+        <label class="form-label" for="import-name">Network name</label>
+        <input
+          id="import-name"
+          type="text"
+          class="form-control"
+          maxlength="160"
+          placeholder="e.g. Imported baseline"
+          [value]="store.name()"
+          [disabled]="store.busy()"
+          (input)="store.setName($any($event.target).value)"
+        />
+        <div class="form-text">
+          The version number is assigned by the server. Reusing an existing name adds the next version -
+          a configuration variant of it.
+        </div>
+      </div>
+      <div class="col-12 col-md-6 pt-md-4">
+        <div class="form-check">
+          <input
+            id="import-baseline"
+            class="form-check-input"
+            type="checkbox"
+            [checked]="store.baseline()"
+            [disabled]="store.busy()"
+            (change)="store.setBaseline($any($event.target).checked)"
+          />
+          <label class="form-check-label" for="import-baseline">
+            Make this the project's baseline
+            <span class="d-block text-body-secondary small">
+              The network the comparison view measures the others against. At most one per project.
+            </span>
+          </label>
+        </div>
+      </div>
+    </div>
+    }
+
+    <hr class="my-4" />
+
+    <h3 class="h6">Time base</h3>
+    @if (timeBaseAssumed()) {
+      <div class="alert alert-warning py-2 small" role="alert">
+        No <code>network_meta</code> sheet was supplied, so this is the default rather than
+        anything your file said. <strong>Confirm it before importing:</strong> every value in a column
+        without a <code>*_unit</code> column is read in this period's unit, and every duration is
+        discretised against it.
+      </div>
+    } @else {
+      <p class="text-body-secondary small">
+        Read from the <code>network_meta</code> sheet. Change it here to import against a different
+        clock - the resolution checks run against whatever is set here.
+      </p>
+    }
+
+    <div class="row g-3 align-items-start">
+      <div class="col-12 col-sm-6 col-lg-4">
+        <app-unit-value
+          label="Period length"
+          fieldId="import-period"
+          kind="duration"
+          [value]="periodValue()"
+          [unit]="periodUnit()"
+          [disabled]="store.busy()"
+          [error]="periodValid() ? null : 'Must be greater than zero.'"
+          (valueCommitted)="onPeriodValue($event)"
+          (unitPicked)="onPeriodUnit($event)"
+        />
+      </div>
+      <div class="col-12 col-sm-6 col-lg-4">
+        <label class="form-label" for="import-horizon">Horizon</label>
+        <div class="input-group">
+          <input
+            id="import-horizon"
+            type="number"
+            class="form-control"
+            min="1"
+            step="1"
+            [value]="horizonDraft()"
+            [disabled]="store.busy()"
+            (input)="onHorizon($any($event.target).value)"
+          />
+          <span class="input-group-text">periods</span>
+        </div>
+        @if (horizon() === null) {
+          <div class="form-text text-danger">A whole number of periods, at least 1.</div>
+        } @else {
+          <!-- Nested rather than an @else if: an `as` alias is only allowed on a primary @if. -->
+          @if (span(); as text) {
+            <div class="form-text">{{ horizon() }} × {{ periodLabel() }} = {{ text }} of wall clock.</div>
+          }
+        }
+      </div>
+      <div class="col-12 col-lg-4">
+        <label class="form-label" for="import-rounding">Rounding policy</label>
+        <select
+          id="import-rounding"
+          class="form-select"
+          [disabled]="store.busy()"
+          (change)="onPolicy($any($event.target).value)"
+        >
+          @for (option of policies; track option) {
+            <option [value]="option" [selected]="option === policy()">{{ option }}</option>
+          }
+        </select>
+        <div class="form-text">{{ policyHints[policy()] }}</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-body">
+    <h2 class="h5 mb-1">Map columns</h2>
+    <p class="text-body-secondary small">
+      Columns whose names already match the canonical schema are mapped for you. Anything
+      else is ignored until you say what it is - pick <em>Ignore</em> to leave it out deliberately.
+    </p>
+
+    @if (store.batch()) {
+      <div class="alert alert-info py-2 small" role="alert">
+        <strong>One mapping for the whole batch.</strong> It is read from the first
+        workbook, <code>{{ store.files()[0].name }}</code>, and applied to all
+        {{ store.files().length }} - files imported together are files of one shape, which is why they
+        are being imported together. A file whose headers do not match will report the missing columns
+        as <strong>its own row-level errors</strong> on the report step rather than being silently
+        mapped wrong, and the others will still import. <strong>Import heterogeneous files one at a
+        time.</strong>
+      </div>
+    }
+
+    @if (missingRequired().length) {
+      <div class="alert alert-danger py-2 small" role="alert">
+        <strong>{{ missingRequired().length }} required column(s) have no source yet.</strong>
+        Validation will refuse the import until each one is mapped or added to the file:
+        <ul class="mb-0 mt-1">
+          @for (entry of missingRequired(); track entry.sheet + entry.column) {
+            <li><code>{{ entry.sheet }}.{{ entry.column }}</code></li>
+          }
+        </ul>
+      </div>
+    }
+
+    @for (sheet of sheets(); track sheet.sheet) {
+      <section class="sheet mb-4">
+        <header class="d-flex flex-wrap align-items-baseline gap-2 mb-2">
+          <h3 class="h6 mb-0"><code>{{ sheet.sheet }}</code></h3>
+          <span class="text-body-secondary small">
+            {{ sheet.sourceName }} · {{ sheet.origin }} · {{ sheet.rowCount }} row(s)
+          </span>
+        </header>
+
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th scope="col" style="width: 28%">Column in your file</th>
+                <th scope="col" style="width: 30%">Sample values</th>
+                <th scope="col" style="width: 42%">Canonical column</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (column of sheet.columns; track column.sourceColumn) {
+                <tr>
+                  <td class="text-break"><code>{{ column.sourceColumn }}</code></td>
+                  <td class="text-body-secondary small text-break">{{ sampleFor(sheet, column.sourceColumn) || '-' }}</td>
+                  <td>
+                    <!--
+                      The current mapping is carried by [selected] on the options rather than by
+                      [value] on the select. A [value] binding is applied before @for has created any
+                      option, so the browser drops it and falls back to the first one - which here is
+                      "Ignore", making every auto-matched column look unmapped.
+                    -->
+                    <select
+                      class="form-select form-select-sm"
+                      [attr.aria-label]="'Canonical column for ' + column.sourceColumn"
+                      [disabled]="store.busy()"
+                      (change)="onMap(sheet, column.sourceColumn, $any($event.target).value)"
+                    >
+                      <option value="" [selected]="mapped(sheet, column.sourceColumn) === ''">
+                        - Ignore this column -
+                      </option>
+                      @for (canonical of columnsFor(sheet); track canonical.name) {
+                        <option
+                          [value]="canonical.name"
+                          [selected]="mapped(sheet, column.sourceColumn) === canonical.name"
+                          [disabled]="isTaken(sheet, canonical.name, column.sourceColumn)"
+                          [title]="canonical.note"
+                        >
+                          {{ canonical.name }}{{ canonical.required ? ' *' : '' }}
+                        </option>
+                      }
+                    </select>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+
+        @if (store.missingRequiredOf(sheet.sheet).length) {
+          <p class="small text-danger mb-0 mt-1">
+            Missing required:
+            @for (column of store.missingRequiredOf(sheet.sheet); track column) {
+              <code class="me-1">{{ column }}</code>
+            }
+          </p>
+        }
+      </section>
+    }
+  </div>
+
+  <div class="card-footer d-flex justify-content-between gap-2">
+    <button type="button" class="btn btn-outline-secondary" [disabled]="store.busy()" (click)="store.backToUpload()">
+      Back
+    </button>
+    @if (store.batch()) {
+      <!-- No dry run for a batch: each file is its own transaction, so there is nothing for one to
+           be a rehearsal of, and a variant cannot be rehearsed at all - `baseNetworkId` names a
+           network a dry run does not create (see DataImportStore). -->
+      <button
+        type="button"
+        class="btn btn-primary"
+        [disabled]="!store.canOpenRoles()"
+        (click)="store.openRoles()"
+      >
+        Continue to roles
+      </button>
+    } @else {
+      <button type="button" class="btn btn-primary" [disabled]="!store.canValidate()" (click)="store.validate()">
+        @if (store.busy()) {
+          <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+        }
+        Validate
+      </button>
+    }
+  </div>
+</div>

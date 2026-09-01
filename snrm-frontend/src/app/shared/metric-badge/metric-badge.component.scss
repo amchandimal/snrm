@@ -1,0 +1,61 @@
+/*
+  Metric badge, coloured by the six families.
+
+  The `--snrm-family-*` custom properties come from `styles.scss`, not from here: the results
+  dashboard, the comparison matrix and the radar chart colour by family too, and a palette declared
+  on this component's host would not inherit into any of them. One global definition is what makes a
+  family the same colour wherever it appears.
+*/
+
+:host {
+  display: inline-block;
+  min-width: 0;
+}
+
+.metric-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-width: 0;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: #212529;
+  cursor: help;
+}
+
+/*
+  A dot rather than a filled pill. Fourteen filled pills in a dashboard is a colour chart; a dot
+  carries the same family signal and leaves the value as the thing the eye lands on.
+*/
+.metric-badge__dot {
+  flex: 0 0 auto;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--snrm-family-unknown);
+}
+
+.metric-badge__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.metric-badge[data-family='TOPOLOGICAL'] .metric-badge__dot {
+  background: var(--snrm-family-topological);
+}
+.metric-badge[data-family='SERVICE'] .metric-badge__dot {
+  background: var(--snrm-family-service);
+}
+.metric-badge[data-family='RECOVERY'] .metric-badge__dot {
+  background: var(--snrm-family-recovery);
+}
+.metric-badge[data-family='ABSORPTION'] .metric-badge__dot {
+  background: var(--snrm-family-absorption);
+}
+.metric-badge[data-family='ECONOMIC'] .metric-badge__dot {
+  background: var(--snrm-family-economic);
+}
+.metric-badge[data-family='COMPOSITE'] .metric-badge__dot {
+  background: var(--snrm-family-composite);
+}

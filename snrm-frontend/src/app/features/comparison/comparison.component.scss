@@ -1,0 +1,79 @@
+/* Comparison view. */
+
+.comparison-table {
+  --best-tint: rgba(25, 135, 84, 0.09);
+
+  th,
+  td {
+    vertical-align: top;
+  }
+}
+
+.comparison-table__metric {
+  min-width: 13rem;
+}
+
+.comparison-table__head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 8rem;
+}
+
+.comparison-table__head .badge {
+  align-self: flex-start;
+}
+
+.comparison-table__direction {
+  display: block;
+  margin-top: 0.125rem;
+  font-size: 0.6875rem;
+  font-weight: 400;
+  color: #495057;
+}
+
+/* A NEUTRAL row has no winner by design, so its hint should not read like a missing one. */
+.comparison-table__direction--muted {
+  color: #adb5bd;
+  font-style: italic;
+}
+
+.comparison-table__cell {
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+  Best in row. A tint plus a weight change, never colour alone: a green cell is invisible to a
+  reader with a red-green deficiency, and the winner is the one thing the matrix exists to show.
+  Ties are all marked - see `ComparisonService.markBest`.
+*/
+.comparison-table__cell--best {
+  background: var(--best-tint);
+  box-shadow: inset 2px 0 0 #198754;
+}
+
+.comparison-table__cell--best .comparison-table__value {
+  font-weight: 600;
+}
+
+.comparison-table__value {
+  display: block;
+}
+
+.comparison-table__ci,
+.comparison-table__periods {
+  display: block;
+  font-size: 0.6875rem;
+  color: #6c757d;
+  white-space: nowrap;
+}
+
+/* --------------------------------------------------------------- lever annotations */
+
+.comparison-table__levers td,
+.comparison-table__levers th {
+  border-bottom-width: 2px;
+  padding-bottom: 0.5rem;
+}
+
+/* `.lever-list` itself is in `styles.scss`: the dashboard's provenance tree renders the same diff. */

@@ -1,0 +1,214 @@
+/* Networks side by side (FR-25). */
+
+:host {
+  display: block;
+}
+
+.sbs {
+  padding: 0.75rem 1rem 1rem;
+}
+
+.sbs__head {
+  margin-bottom: 0.75rem;
+}
+
+.sbs__title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.sbs__purpose {
+  max-width: 70ch;
+  font-size: 0.8125rem;
+  color: #6c757d;
+}
+
+.sbs__busy {
+  white-space: nowrap;
+}
+
+/*
+  The shared selection's readout. Sticky, because it is the answer to the gesture the reader just
+  made and the panes below it may be a screenful tall - scrolling to a pane must not scroll away the
+  tally that says how many panes have the element at all.
+*/
+.sbs__selection {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.625rem;
+  padding: 0.375rem 0.625rem;
+  border: 1px solid #e9ecef;
+  border-radius: 0.375rem;
+  background: #f8f9fa;
+  font-size: 0.8125rem;
+}
+
+.sbs__selected code,
+.sbs__selected strong {
+  font-weight: 600;
+}
+
+.sbs__difference {
+  color: #997404;
+}
+
+/*
+  The legend and the one collapse control, on one line above the grid (FR-27). The control is pushed
+  to the trailing edge so it does not read as another legend entry - it is the only thing in this
+  header that changes the window rather than describing it.
+*/
+.sbs__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  margin-top: 0.5rem;
+}
+
+.sbs__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.75rem;
+  color: #495057;
+}
+
+.sbs__collapse {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* The default rule, stated where the control that overrides it is. */
+.sbs__collapse-note {
+  max-width: 46ch;
+  font-size: 0.75rem;
+  color: #6c757d;
+}
+
+.sbs__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+}
+
+.sbs__swatch {
+  display: inline-block;
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 999px;
+}
+
+/* ------------------------------------------- which metrics the panes print (FR-31) */
+
+/*
+  A real <fieldset>, so the browser's default border and inline-size behaviour are both reset here
+  rather than left to look like an accident. It sits on its own row under the legend and the collapse
+  control, because nine checkboxes and two buttons alongside those would wrap into a header nobody
+  can scan - and unlike them this is a control the reader returns to while working.
+*/
+.sbs__metrics {
+  margin: 0.5rem 0 0;
+  padding: 0.4375rem 0.625rem 0.5rem;
+  border: 1px solid #e9ecef;
+  border-radius: 0.375rem;
+  background: #f8f9fa;
+  min-inline-size: 0; /* A fieldset's `min-inline-size: min-content` would refuse to shrink. */
+}
+
+.sbs__metrics-legend {
+  float: none; /* Bootstrap's reboot makes every legend a full-width float; this one is a label. */
+  width: auto;
+  margin: 0 0 0.25rem;
+  padding: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.2;
+  color: #495057;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.sbs__metric-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.125rem 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sbs__metric {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.8125rem;
+}
+
+/* Bootstrap's `.form-check-input` carries the margins of a stacked check; this row is inline. */
+.sbs__metric .form-check-input {
+  margin: 0;
+  flex: 0 0 auto;
+}
+
+.sbs__metric .form-check-label {
+  cursor: pointer;
+}
+
+.sbs__metric-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem 0.625rem;
+  margin-top: 0.4375rem;
+}
+
+/* The count, so nobody has to tally ticks across a wrapped row of nine. */
+.sbs__metric-summary {
+  font-size: 0.75rem;
+  color: #6c757d;
+}
+
+/*
+  The grid: `columns = ⌈√n⌉`, and the rows follow from the count. `minmax(0, 1fr)` rather
+  than `1fr`, because a grid track's default minimum is `auto` and an SVG at `width: 100%` would then
+  refuse to shrink below its own intrinsic width - which is how a 2 × 2 becomes a horizontally
+  scrolling row of four.
+*/
+.sbs__grid {
+  display: grid;
+  grid-template-columns: repeat(var(--sbs-columns, 1), minmax(0, 1fr));
+  gap: 0.75rem;
+  align-items: stretch;
+}
+
+/*
+  Below a tablet there is no side-by-side to be had: two panes at 180 px each is two panes that show
+  nothing, which is the same judgement the cap of `pane-grid.ts` makes at the other end. One column,
+  and the reader scrolls - the honest degradation rather than a grid that keeps its shape and loses
+  its content.
+*/
+@media (max-width: 768px) {
+  .sbs__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.sbs__foot {
+  margin-top: 0.75rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid #e9ecef;
+  font-size: 0.75rem;
+  color: #6c757d;
+}

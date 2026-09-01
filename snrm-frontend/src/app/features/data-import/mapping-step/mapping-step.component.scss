@@ -1,0 +1,10 @@
+.sheet {
+  + .sheet {
+    border-top: 1px solid var(--bs-border-color-translucent);
+    padding-top: 1rem;
+  }
+}
+
+code {
+  white-space: nowrap;
+}

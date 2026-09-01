@@ -1,0 +1,261 @@
+<!-- Comparison view: variants × metrics, radar, lever annotations (FR-10). -->
+<div class="container-fluid app-view px-4">
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+      <li class="breadcrumb-item"><a routerLink="/projects">Projects</a></li>
+      <li class="breadcrumb-item"><a [routerLink]="['/projects', projectId()]">Project</a></li>
+      <li class="breadcrumb-item active" aria-current="page">Compare</li>
+    </ol>
+  </nav>
+
+  <div class="d-flex flex-wrap align-items-baseline justify-content-between gap-3 mb-3">
+    <div>
+      <h1 class="h3 mb-1">Compare configurations</h1>
+      <p class="text-body-secondary mb-0">
+        Each column is one configuration and its lever diff from the network it was forked from; each
+        row is a metric with the best value highlighted.
+      </p>
+    </div>
+    <div class="d-flex gap-2">
+      <a class="btn btn-sm btn-outline-primary" [routerLink]="['/projects', projectId(), 'simulations']">
+        Run simulation
+      </a>
+      <div class="btn-group">
+        <button
+          type="button"
+          class="btn btn-sm btn-outline-primary"
+          [disabled]="exports.busy()"
+          (click)="export('xlsx')"
+        >
+          {{ exports.busy() ? 'Exporting…' : 'Export .xlsx' }}
+        </button>
+        <button
+          type="button"
+          class="btn btn-sm btn-outline-primary"
+          [disabled]="exports.busy()"
+          (click)="export('csv')"
+          title="A zip of the matrix, the column legend and the caveats as CSV files"
+        >
+          .csv
+        </button>
+      </div>
+    </div>
+  </div>
+
+  @if (store.error(); as message) {
+    <div class="alert alert-danger d-flex justify-content-between align-items-start" role="alert">
+      <span>{{ message }}</span>
+      <button type="button" class="btn-close" aria-label="Dismiss" (click)="store.dismissError()"></button>
+    </div>
+  }
+
+  @if (exports.error(); as message) {
+    <div class="alert alert-warning d-flex justify-content-between align-items-start" role="alert">
+      <span>{{ message }}</span>
+      <button type="button" class="btn-close" aria-label="Dismiss" (click)="exports.dismissError()"></button>
+    </div>
+  }
+
+  <!-- --------------------------------------------------------------- run-keyed mode -->
+  @if (runMode()) {
+    <div class="alert alert-info d-flex justify-content-between align-items-center py-2 small" role="alert">
+      <span>
+        <strong>Comparing runs, not networks</strong> (FR-17): one column per run, so two runs of the
+        same network - its baseline beside a disruption, or two scenarios - sit side by side. Ticking
+        a network below returns to the ordinary network-keyed view.
+      </span>
+      <button type="button" class="btn btn-sm btn-outline-secondary text-nowrap" (click)="leaveRunMode()">
+        Compare networks instead
+      </button>
+    </div>
+  }
+
+  <!-- ------------------------------------------------------------------- selection -->
+  <div class="card mb-3">
+    <div class="card-body py-3">
+      <div class="d-flex flex-wrap align-items-center gap-3">
+        <div class="d-flex flex-wrap gap-3 flex-grow-1">
+          @for (network of store.networks(); track network.id) {
+            <div class="form-check">
+              <input
+                class="form-check-input"
+                type="checkbox"
+                [id]="'net-' + network.id"
+                [checked]="store.isSelected(network.id)"
+                (change)="toggle(network.id)"
+              />
+              <label class="form-check-label" [for]="'net-' + network.id">
+                {{ network.name }} v{{ network.version }}
+                @if (network.baseline) {
+                  <span class="badge text-bg-light">baseline</span>
+                }
+              </label>
+            </div>
+          }
+        </div>
+
+        <div class="d-flex align-items-center gap-2">
+          <label class="form-label mb-0 small text-nowrap" for="scenario">Scenario</label>
+          <select
+            id="scenario"
+            class="form-select form-select-sm"
+            [value]="store.scenarioId() ?? ''"
+            (change)="setScenario($any($event.target).value)"
+          >
+            <option value="">Latest run of each, whatever the scenario</option>
+            @for (scenario of store.scenarios(); track scenario.id) {
+              <option [value]="scenario.id">{{ scenario.name }}</option>
+            }
+          </select>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ---------------------------------------------------------------------- notes -->
+  @for (note of store.notes(); track note.code) {
+    <div
+      class="alert d-flex gap-2 py-2 small"
+      [class.alert-warning]="note.code === 'MIXED_TIME_BASES' || note.code === 'MIXED_SCENARIOS'"
+      [class.alert-secondary]="note.code === 'NO_RUN' || note.code === 'PARTIAL_SUITE'"
+      role="alert"
+    >
+      <strong class="text-nowrap">{{ note.code }}</strong>
+      <span>{{ note.message }}</span>
+    </div>
+  }
+
+  @if (store.isLoading()) {
+    <p class="text-body-secondary">Building the comparison…</p>
+  }
+
+  @if (store.variants().length === 0 && !store.isLoading()) {
+    <p class="text-body-secondary">Choose at least one configuration to compare.</p>
+  }
+
+  @if (store.variants().length > 0) {
+    <div class="row g-4">
+      <!-- ------------------------------------------------------------- the matrix -->
+      <div class="col-xxl-8">
+        <div class="card h-100">
+          <div class="card-body">
+            <div class="table-responsive">
+              <table class="table table-sm align-middle comparison-table mb-0">
+                <thead>
+                  <tr>
+                    <th scope="col" class="comparison-table__metric">Metric</th>
+                    @for (variant of store.variants(); track variant.networkId) {
+                      <th scope="col">
+                        <div class="comparison-table__head">
+                          <span class="fw-semibold">{{ columnLabel(variant) }}</span>
+                          @if (variant.baseline) {
+                            <span class="badge text-bg-light">baseline</span>
+                          }
+                          @if (runLink(variant); as link) {
+                            <a class="small" [routerLink]="link">run #{{ variant.runId }}</a>
+                          } @else {
+                            <span class="small text-body-secondary">no run</span>
+                          }
+                          @if (store.mixedTimeBases()) {
+                            <!--
+                              Only shown when the clocks differ: on a comparison where they all
+                              match, repeating "1 day" on every column is noise. When they do not,
+                              it is the single most important thing about the column.
+                            -->
+                            <span class="badge text-bg-warning-subtle text-warning-emphasis">
+                              {{ clockOf(variant) }} periods
+                            </span>
+                          }
+                        </div>
+                      </th>
+                    }
+                  </tr>
+
+                  <!--
+                    The lever annotations. Under the header rather than in a tooltip:
+                    a reader scanning for the winning column needs the cause in the same glance as
+                    the effect, or the matrix reports that something improved without saying what.
+                  -->
+                  @if (store.hasLeverChanges()) {
+                    <tr class="comparison-table__levers">
+                      <th scope="row" class="fw-normal small text-body-secondary">Lever changes</th>
+                      @for (entries of leverEntries(); track $index) {
+                        <td>
+                          @if (entries.length === 0) {
+                            <span class="small text-body-secondary">- (not a variant)</span>
+                          } @else {
+                            <ul class="lever-list">
+                              @for (entry of entries; track entry.key) {
+                                <li>
+                                  <span class="lever-list__key">{{ entry.key }}</span>
+                                  <span class="lever-list__value">{{ entry.value }}</span>
+                                </li>
+                              }
+                            </ul>
+                          }
+                        </td>
+                      }
+                    </tr>
+                  }
+                </thead>
+
+                <tbody>
+                  @for (row of store.rows(); track row.metricCode) {
+                    <tr>
+                      <th scope="row">
+                        <app-metric-badge [code]="row.metricCode" />
+                        <span
+                          class="comparison-table__direction"
+                          [class.comparison-table__direction--muted]="!isRanked(row)"
+                        >
+                          {{ directionHint(row) }}
+                          @if (rowUnitLabel(row); as unit) {
+                            <!--
+                              The common unit every cell in this row was converted to.
+                              Named on the row rather than repeated in each cell: the conversion is a
+                              property of the row, and fourteen copies of "hours" would be noise.
+                            -->
+                            · in {{ unit }}
+                          }
+                        </span>
+                      </th>
+
+                      @for (cell of row.cells; track $index) {
+                        <td
+                          class="comparison-table__cell"
+                          [class.comparison-table__cell--best]="cell?.best"
+                        >
+                          <span class="comparison-table__value">{{ cellText(row, cell) }}</span>
+                          @if (cellInterval(row, cell); as interval) {
+                            <span class="comparison-table__ci">[{{ interval }}]</span>
+                          }
+                          @if (cellPeriods(cell); as periods) {
+                            <!-- The raw figure, so the converted value stays traceable. -->
+                            <span class="comparison-table__periods">{{ periods }}</span>
+                          }
+                        </td>
+                      }
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- -------------------------------------------------------------- the radar -->
+      <div class="col-xxl-4">
+        <div class="card h-100">
+          <div class="card-body">
+            <h2 class="h6 mb-1">Normalised profile</h2>
+            <p class="small text-body-secondary mb-3">
+              Every axis oriented so further out is better, scaled across the compared variants.
+            </p>
+            <app-metric-radar [rows]="store.rows()" [variants]="store.variants()" />
+          </div>
+        </div>
+      </div>
+    </div>
+  }
+</div>

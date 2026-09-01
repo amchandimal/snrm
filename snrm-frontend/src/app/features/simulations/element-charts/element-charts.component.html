@@ -1,0 +1,79 @@
+<!--
+  The element scope (FR-22). Replaces the performance curve while a node or a link is
+  selected; the network scope is the dashboard exactly as it was.
+-->
+<div class="element">
+  <div class="element__head">
+    <div>
+      <h2 class="h6 mb-1">
+        {{ title() }}
+        <span class="id-chip ms-1">{{ subtitle() }}</span>
+      </h2>
+      <p class="small text-body-secondary mb-0">
+        This element’s per-period series over the whole horizon, drawn stepwise because the engine is
+        discrete-time - a value between two periods is one no replication produced.
+        <strong>Double-click a chart</strong> to enlarge it, and again to put it back.
+      </p>
+    </div>
+    <button type="button" class="btn btn-sm btn-outline-secondary" (click)="backToNetwork()">
+      Whole network
+    </button>
+  </div>
+
+  @if (note(); as message) {
+    <!--
+      Never zeros and never an error banner. A run that recorded no element detail answered a
+      different question, not a failed one - and everything on the network scope still
+      works, which the line below says out loud so a reader does not take the page for broken.
+    -->
+    <p class="element__note">{{ message }}</p>
+    <p class="element__note element__note--quiet">
+      The whole-network scope is unaffected: its curve, metric cards and criticality table come from
+      the run’s per-period table and the network’s structure, neither of which is this series.
+    </p>
+  } @else {
+    <!--
+      Nested rather than `@else if (periodLength(); as period)`: an `as` alias binds on the primary
+      `@if` alone (NG5002). `note()` already answers a run with no clock recorded, so this branch is
+      the one that has charts - the alias is what hands `series-chart` a `Duration` rather than a
+      `Duration | null` under strictTemplates, which is the same reason the performance curve's own
+      block is nested.
+    -->
+    @if (periodLength(); as period) {
+      <div class="element__charts">
+        @for (chart of charts(); track chart.key) {
+          <!--
+            One cursor, bound into every chart of the set (FR-22). The transport that writes it is
+            above this panel and governs the whole page, so the line on all eight charts, the
+            performance curve's line, the network figures and the map's tints are one period.
+
+            The cell owns the double-click that enlarges a chart - the same gesture, the same
+            store signal and the same wording as the network scope's grid, because one gesture that
+            worked on one grid and not the other would read as a defect.
+          -->
+          <div
+            class="chart-cell"
+            [class.chart-cell--large]="isChartExpanded(chart.key)"
+            tabindex="0"
+            [attr.aria-expanded]="isChartExpanded(chart.key)"
+            [title]="chartHint(chart.key, chart.label)"
+            (dblclick)="toggleChart(chart.key)"
+            (keydown.enter)="toggleChart(chart.key)"
+            (keydown.space)="toggleChart(chart.key)"
+          >
+            <app-series-chart
+              [chart]="chart"
+              [periodLength]="period"
+              [cursorPeriod]="cursorPeriod()"
+              [size]="chartSize(chart.key)"
+            />
+          </div>
+        }
+      </div>
+
+      @if (hasBareChart()) {
+        <p class="element__note element__note--quiet">{{ noBaselineNote }}</p>
+      }
+    }
+  }
+</div>

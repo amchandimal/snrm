@@ -1,0 +1,101 @@
+-- ============================================================================
+-- V10__element_captions.sql — a short caption on a node or a link, and a flag
+-- that says whether the canvas draws it (FR-30).
+--
+-- WHAT THIS IS FOR
+--
+-- FR-30: "Every node and every link carries an optional short caption and a
+-- caption_visible flag. The canvas draws a visible caption beneath the
+-- element's existing label in a smaller, lower-contrast type."
+--
+-- A caption is an annotation about the thing — "Nordic hub, 3PL operated",
+-- "single-sourced, 6-week qualification" — written while the diagram is being
+-- built and read by whoever opens it next. Two columns per table, on the two
+-- tables that have things to annotate.
+--
+-- WHY IT IS A COLUMN AND NOT A VIEW PREFERENCE
+--
+-- The playback speed of FR-18 is device-local localStorage and deliberately
+-- absent from every export, so the obvious question is why a caption
+-- is not the same. Because it is not about the device, it is about the network:
+-- it travels in every export format beside pos_x/pos_y, for the reason those
+-- columns were added at all — a diagram someone laid out and annotated is
+-- modelling work, and a round trip that drops half of it is a round trip that
+-- loses it. Pacing is how fast you watch a result; a caption is
+-- part of the model's own description.
+--
+-- WHY caption_visible DEFAULTS TO TRUE, WHICH IS THE WHOLE ARGUMENT HERE
+--
+-- Three things follow from the one rule that governs this: an EMPTY CAPTION DRAWS
+-- NOTHING, whatever the flag says.
+--
+--   * The flag is a control over annotation that already exists, not a way to
+--     reserve space. So its value on a row with no caption is unobservable, and
+--     any default is "correct" for such a row — which is every row this
+--     migration touches.
+--   * Typing a caption should show one. With DEFAULT FALSE, writing a caption
+--     would draw nothing until the user found a checkbox and ticked it, which
+--     reads as a broken field rather than as a hidden annotation.
+--   * EVERY EXISTING ROW IS ALREADY CORRECT UNDER TRUE. No backfill, no data
+--     migration, no second statement — a NOT NULL DEFAULT TRUE column on a
+--     table of captionless rows is a schema change and nothing else. DEFAULT
+--     FALSE would have needed exactly the same non-decision written down as an
+--     UPDATE, and would then have made the first caption anyone types invisible.
+--
+-- The same default is the omission rule of the interchange formats, and that is
+-- not a coincidence: an omitted caption_visible column and an omitted
+-- captionVisible attribute both read as VISIBLE, so a file carrying
+-- only `caption` behaves the way the person who wrote it expects, and a row
+-- imported from such a file is indistinguishable from a row created here.
+--
+-- WHY NOT NULL ON THE FLAG AND NULLABLE ON THE TEXT
+--
+-- Two states, not three. "Hidden", "shown" and "unspecified" would make every
+-- reader — canvas, export writer, XML writer, property panel — decide what the
+-- third one means, and they would not all decide the same thing. The text is
+-- genuinely optional and NULL is what "no caption" is; the flag is a boolean
+-- and a boolean with a NULL is a tri-state pretending otherwise.
+--
+-- WHY 200 CHARACTERS
+--
+-- Long enough for a sentence, short enough that it cannot become a second
+-- description field: the caption has to sit UNDER the element's
+-- label in smaller type without competing with the name, and an element is
+-- identified by its name everywhere else in the tool (uq_node, the archive's
+-- ElementRef, FR-25's by-name matching). A cap the canvas can honour is part of
+-- the feature rather than a storage decision. The request DTOs carry the
+-- matching @Size so the refusal names the field instead of arriving as a
+-- driver error.
+--
+-- NO INDEX
+--
+-- Nothing queries by caption. It is read when a network is read, whole, and
+-- written by the bulk PATCH alongside every other attribute. An
+-- index would be a cost with no reader.
+--
+-- THE GUARD IS NOT TOUCHED, AND THAT IS DELIBERATE
+--
+-- A caption is read by no engine, exactly like the network name FR-29 exempted
+-- from the immutability guard — and the exemption is deliberately NOT extended
+-- here. A caption sits on an element INSIDE the network, so exempting it would
+-- mean the editor's one debounced save queue had to know which fields in a
+-- batch are exempt and split the request, or a second write path had to exist
+-- beside it; either way the guard stops being one call at the top of a service
+-- and becomes per-field logic in two places. NodeService and LinkService are
+-- unchanged, and a caption on a frozen network raises the fork prompt like any
+-- other edit.
+--
+-- Storage engine and charset are the schema defaults (InnoDB, utf8mb4) — the
+-- ones V2__domain.sql states explicitly; ALTER TABLE inherits them.
+-- ============================================================================
+
+ALTER TABLE node
+  ADD COLUMN caption         VARCHAR(200) NULL         AFTER pos_y,
+  ADD COLUMN caption_visible BOOLEAN NOT NULL DEFAULT TRUE AFTER caption;
+
+-- The same pair on the arc. A link's caption is drawn under the label it
+-- already carries — its declared lead time — which is why the two
+-- tables get the same two columns rather than the node getting a richer form.
+ALTER TABLE link
+  ADD COLUMN caption         VARCHAR(200) NULL         AFTER failure_prob,
+  ADD COLUMN caption_visible BOOLEAN NOT NULL DEFAULT TRUE AFTER caption;

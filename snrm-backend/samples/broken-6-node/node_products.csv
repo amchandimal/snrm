@@ -1,0 +1,10 @@
+node,product,demand_value,initial_inventory,safety_stock,holding_cost_value
+CUST-1,WIDGET-A,40,0,0,0
+CUST-1,WIDGET-A,45,0,0,0
+CUST-2,WIDGET-A,25,0,0,0
+DC-1,WIDGET-A,0,120,60,0.10
+DC-2,WIDGET-A,0,120,60,0.10
+PLANT-1,WIDGET-A,10,200,80,0.05
+SUP-1,WIDGET-A,0,300,100,0.02
+CUST-1,WIDGET-Z,15,0,0,0
+DC-9,WIDGET-A,0,50,25,0.10

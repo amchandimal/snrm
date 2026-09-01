@@ -1,0 +1,102 @@
+<section class="metrics" aria-label="Topological metrics">
+  <header class="metrics__header">
+    <h2 class="metrics__title">
+      Topological metrics
+      <span class="metrics__hint" title="The structural half of the metric suite - computed from the graph, no simulation involved.">?</span>
+    </h2>
+    <button
+      type="button"
+      class="btn btn-sm btn-outline-secondary"
+      title="Recompute now. Pending canvas edits are saved first."
+      [disabled]="store.isLoading()"
+      (click)="refresh()"
+    >
+      @if (store.isLoading()) {
+        <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+      } @else {
+        ↻
+      }
+      Recompute
+    </button>
+  </header>
+
+  <p class="metrics__status" aria-live="polite">
+    @if (store.isLoading()) {
+      <span class="metrics__badge metrics__badge--busy">Computing…</span>
+    } @else if (store.stale() && store.hasMetrics()) {
+      <span class="metrics__badge metrics__badge--stale">Out of date - the network has changed</span>
+    } @else if (timing()) {
+      <span class="metrics__muted">{{ timing() }}</span>
+    }
+  </p>
+
+  @if (store.error(); as message) {
+    <div class="alert alert-warning metrics__error" role="alert">
+      <span>{{ message }}</span>
+      <button type="button" class="btn-close" aria-label="Dismiss" (click)="store.dismissError()"></button>
+    </div>
+  }
+
+  @if (!store.hasMetrics() && !store.isLoading()) {
+    <p class="metrics__empty">
+      Nothing computed yet. Press <em>Recompute</em> to run the suite over this network.
+    </p>
+  }
+
+  <!-- ------------------------------------------------- network-scoped -->
+  @if (rows().length) {
+    <dl class="metrics__list">
+      @for (row of rows(); track row.code) {
+        <div class="metrics__item" [title]="row.meaning">
+          <dt class="metrics__label">{{ row.label }}</dt>
+          <dd class="metrics__value">{{ row.formatted }}</dd>
+          <dd class="metrics__meaning">{{ row.meaning }}</dd>
+        </div>
+      }
+    </dl>
+  }
+
+  <!-- ---------------------------------- per-node criticality + encoding -->
+  @if (criticalityRows().length) {
+    <div class="metrics__section">
+      <div class="metrics__section-head">
+        <h3 class="metrics__subtitle">Node criticality</h3>
+        <button
+          type="button"
+          class="btn btn-sm"
+          [class.btn-secondary]="store.sizeByCriticality()"
+          [class.btn-outline-secondary]="!store.sizeByCriticality()"
+          [attr.aria-pressed]="store.sizeByCriticality()"
+          title="Scale each node on the canvas by its NODE_CRITICALITY, so structural weak points are visible while editing"
+          (click)="toggleSizeByCriticality()"
+        >
+          ◉ Size by criticality
+        </button>
+      </div>
+      <p class="metrics__meaning metrics__meaning--section">
+        Share of serviceable demand the network loses if this node goes. 100% means nothing can be
+        served without it.
+      </p>
+      <table class="metrics__table">
+        <tbody>
+          @for (row of criticalityRows(); track row.nodeId) {
+            <tr
+              class="metrics__row"
+              tabindex="0"
+              [title]="'Select ' + row.name + ' on the canvas'"
+              (click)="select(row)"
+              (keydown.enter)="select(row)"
+              (keydown.space)="select(row)"
+            >
+              <th scope="row" class="metrics__node">{{ row.name }}</th>
+              <td class="metrics__bar-cell">
+                <span class="metrics__bar" [style.width.%]="row.share * 100" aria-hidden="true"></span>
+              </td>
+              <td class="metrics__percent">{{ percent(row.value) }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</section>

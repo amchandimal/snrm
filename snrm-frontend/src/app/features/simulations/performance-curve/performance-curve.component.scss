@@ -1,0 +1,134 @@
+/* The performance curve and its resilience triangle. */
+
+:host {
+  display: block;
+}
+
+.curve__svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.curve__grid line {
+  stroke: #e9ecef;
+  stroke-width: 1;
+}
+
+.curve__axis line {
+  stroke: #ced4da;
+  stroke-width: 1;
+}
+
+.curve__tick {
+  fill: #6c757d;
+  font-size: 11px;
+  text-anchor: middle;
+}
+
+.curve__grid .curve__tick {
+  text-anchor: end;
+}
+
+.curve__axis-label {
+  fill: #495057;
+  font-size: 12px;
+  text-anchor: middle;
+}
+
+/*
+  The shaded region. Translucent rather than solid so the gridlines stay readable through it - the
+  reader has to be able to see *how far* performance fell, not only that it did.
+*/
+.curve__loss path {
+  fill: var(--snrm-loss-fill);
+  stroke: var(--snrm-loss-stroke);
+  stroke-width: 1;
+}
+
+.curve__baseline {
+  fill: none;
+  stroke: var(--snrm-curve-baseline);
+  stroke-width: 1.5;
+  /* Dashed because it is the comparator, not a second result. */
+  stroke-dasharray: 5 4;
+}
+
+.curve__disrupted {
+  fill: none;
+  stroke: var(--snrm-curve-disrupted);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+.curve__onset line {
+  stroke: var(--snrm-curve-disrupted);
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+  opacity: 0.55;
+}
+
+/*
+  The shared period cursor (FR-22). Neutral grey and solid, so it reads as neither of the two
+  curves nor as the onset marker drawn in the disrupted colour: those three say what the run did,
+  and this one says where the reader is standing. It is the same ink and the same weight the element
+  charts draw their cursor in, because it is the same cursor.
+*/
+.curve__cursor {
+  stroke: #495057;
+  stroke-width: 1;
+  opacity: 0.65;
+}
+
+/* ------------------------------------------------------------------------ legend */
+
+/*
+  The legend reads at both sizes, but a small curve is one of seven charts in a grid and three keys
+  at 13 px would be taller than the picture they explain.
+*/
+.curve__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.375rem;
+  font-size: 0.6875rem;
+  color: #495057;
+}
+
+.curve--large .curve__legend {
+  gap: 1rem;
+  margin-top: 0.5rem;
+  font-size: 0.8125rem;
+}
+
+.curve__key {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.curve__key::before {
+  content: '';
+  display: inline-block;
+  width: 1.25rem;
+  height: 0.1875rem;
+  border-radius: 1px;
+}
+
+.curve__key--disrupted::before {
+  background: var(--snrm-curve-disrupted);
+}
+
+.curve__key--baseline::before {
+  background: repeating-linear-gradient(
+    to right,
+    var(--snrm-curve-baseline) 0 5px,
+    transparent 5px 9px
+  );
+}
+
+.curve__key--loss::before {
+  height: 0.75rem;
+  background: var(--snrm-loss-fill);
+  border: 1px solid var(--snrm-loss-stroke);
+}

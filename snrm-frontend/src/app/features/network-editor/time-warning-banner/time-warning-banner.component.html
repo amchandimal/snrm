@@ -1,0 +1,58 @@
+@if (visible()) {
+  <div class="alert alert-warning time-banner" role="status">
+    <div class="time-banner__header">
+      <strong>
+        Some durations do not survive this network's period
+        @if (period(); as length) {
+          of {{ length }}
+        }
+        @if (policy(); as rounding) {
+          ({{ rounding }})
+        }.
+      </strong>
+      <span class="time-banner__summary">{{ summary() }}</span>
+      <button
+        type="button"
+        class="btn-close time-banner__close"
+        aria-label="Dismiss the resolution warnings"
+        title="Dismiss. It comes back if the findings change."
+        (click)="dismiss()"
+      ></button>
+    </div>
+
+    <ul class="time-banner__list">
+      @for (row of rows(); track row.finding.code + ':' + row.finding.elementType + ':' + row.finding.elementId + ':' + row.finding.field) {
+        <li class="time-banner__item">
+          <button
+            type="button"
+            class="time-banner__entry"
+            [class.time-banner__entry--static]="!row.selectable"
+            [disabled]="!row.selectable"
+            [title]="row.selectable ? 'Select this element on the canvas' : 'Not an element of this canvas'"
+            (click)="select(row)"
+          >
+            <span class="time-banner__severity time-banner__severity--{{ row.finding.severity }}">
+              {{ row.finding.severity }}
+            </span>
+            <span class="time-banner__element">{{ row.finding.elementName }}</span>
+            <span class="time-banner__field">{{ row.finding.field }}</span>
+            @if (row.declared) {
+              <span class="time-banner__numbers">
+                declared {{ row.declared }}
+                @if (row.converted) {
+                  → engine uses {{ row.converted }}
+                }
+                @if (row.error) {
+                  ({{ row.error }})
+                }
+              </span>
+            } @else if (row.converted) {
+              <span class="time-banner__numbers">{{ row.converted }}</span>
+            }
+          </button>
+          <p class="time-banner__message">{{ row.finding.message }}</p>
+        </li>
+      }
+    </ul>
+  </div>
+}

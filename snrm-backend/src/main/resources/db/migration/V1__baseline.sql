@@ -1,0 +1,2 @@
+-- V1__baseline.sql — Flyway baseline for the SNRM schema.
+-- Intentionally empty: tables land in subsequent migrations as the modules are implemented.

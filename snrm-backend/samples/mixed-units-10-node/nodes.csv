@@ -1,0 +1,11 @@
+name,type,capacity_value,capacity_time_unit,processing_time_value,processing_time_unit,fixed_cost,var_cost,failure_prob,region,lat,lng
+SUP-EU,SUPPLIER,500,d,0,h,1800,2.10,0.02,EU-West,52.37,4.90
+SUP-ASIA,SUPPLIER,2000,Weeks,0,h,1200,1.60,0.06,APAC,31.23,121.47
+PLT-DE,PLANT,40,hr,90,min,14000,6.40,0.01,EU-West,51.22,6.78
+DC-HUB,DC,30,H,4,hrs,4200,1.10,0.01,EU-West,51.92,4.48
+DC-NORTH,DC,800,wk,2,HOUR,1500,0.90,0.02,EU-North,59.33,18.07
+DC-SOUTH,DC,100,DAY,2,hours,1450,0.95,0.02,EU-South,41.90,12.50
+CUS-A,CUSTOMER,,DAY,0,h,0,0,0,EU-North,60.17,24.94
+CUS-B,CUSTOMER,,DAY,0,h,0,0,0,EU-North,59.91,10.75
+CUS-C,CUSTOMER,,DAY,0,h,0,0,0,EU-South,37.98,23.73
+CUS-D,CUSTOMER,,DAY,0,h,0,0,0,EU-South,45.46,9.19

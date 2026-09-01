@@ -1,0 +1,181 @@
+/* The per-bar panel. Field rhythm matches `network-editor/property-panel` and
+   `time-settings-dialog`, so a duration field looks the same wherever the tool asks for one - which
+   is the visible half of them all being the one `app-unit-value`. */
+
+.event-editor {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #dee2e6;
+  border-radius: 0.5rem;
+  background: #fff;
+  max-height: 100%;
+  overflow: hidden;
+}
+
+.event-editor__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.625rem 0.875rem;
+  border-bottom: 1px solid #dee2e6;
+  background: #f8f9fa;
+}
+
+.event-editor__title {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.event-editor__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+  padding: 0.875rem;
+  overflow-y: auto;
+}
+
+.event-editor__foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 0.625rem 0.875rem;
+  border-top: 1px solid #dee2e6;
+  background: #f8f9fa;
+}
+
+.event-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  align-items: stretch;
+}
+
+.event-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #495057;
+}
+
+.event-value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: #212529;
+}
+
+.event-hint {
+  font-size: 0.6875rem;
+  color: #6c757d;
+  line-height: 1.4;
+}
+
+/* What the declared durations become on this network's clock. Blue, like the property
+   panel's restatement line: a courtesy, not a warning. */
+.event-periods {
+  font-size: 0.75rem;
+  color: #0a58ca;
+  background: #f1f6ff;
+  border: 1px solid #cfe2ff;
+  border-radius: 0.375rem;
+  padding: 0.4375rem 0.5625rem;
+}
+
+/* Something the API will refuse, or a conversion that loses the event. */
+.event-warn {
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: #8a6100;
+  background: #fff8e6;
+  border: 1px solid #ffe1a3;
+  border-radius: 0.375rem;
+  padding: 0.4375rem 0.5625rem;
+}
+
+.event-error {
+  font-size: 0.75rem;
+  color: #dc3545;
+  line-height: 1.4;
+}
+
+/* The resolved node set of a REGION event - the preview shown before it is applied. */
+.event-preview {
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: #0f5132;
+  background: #f0f9f4;
+  border: 1px solid #badbcc;
+  border-radius: 0.375rem;
+  padding: 0.4375rem 0.5625rem;
+}
+
+.event-preview__node {
+  display: inline-block;
+  background: #d1e7dd;
+  border-radius: 0.25rem;
+  padding: 0 0.3125rem;
+  margin: 0.125rem 0.1875rem 0 0;
+}
+
+/* What the canvas selection aimed this draft at (FR-16). Deliberately not a disabled
+   <select>: there is nothing to pick here, and a greyed-out dropdown reads as a control that has
+   stopped working rather than as a target that was chosen by pointing at it. */
+.event-aimed {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1875rem;
+  max-height: 9rem;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0.375rem 0.5rem;
+  list-style: none;
+  border: 1px solid #dee2e6;
+  border-radius: 0.375rem;
+  background: #f8f9fa;
+}
+
+.event-aimed__item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+}
+
+.event-aimed__label {
+  font-weight: 600;
+  color: #212529;
+  overflow-wrap: anywhere;
+}
+
+.event-aimed__kind {
+  flex: 0 0 auto;
+  font-size: 0.6875rem;
+  color: #6c757d;
+}
+
+.event-slider {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.event-slider .form-range {
+  flex: 1 1 auto;
+}
+
+.event-number {
+  flex: 0 0 4.5rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.event-rule {
+  margin: 0.125rem 0;
+  border-top-color: #e9ecef;
+}

@@ -1,0 +1,190 @@
+<div class="card shadow-sm mb-3">
+  <div class="card-body">
+    <h2 class="h5 mb-1">3. Roles</h2>
+    <p class="text-body-secondary small mb-3">
+      One network per file, named after the file. Choose which file is the
+      <strong>baseline</strong> - it is imported first, because a variant edge needs its base to
+      exist - and say what each of the others is. The default is
+      <em>variant of the baseline</em>, since a folder of workbooks from one study is usually one
+      configuration and its alternatives.
+    </p>
+
+    @if (store.baselineNote(); as note) {
+      <div
+        class="alert py-2 small d-flex justify-content-between align-items-start gap-2"
+        [class.alert-info]="note.tone === 'info'"
+        [class.alert-warning]="note.tone === 'warning'"
+        role="alert"
+      >
+        <span>{{ note.message }}</span>
+        @if (note.tone === 'warning') {
+          <button
+            type="button"
+            class="btn btn-sm btn-outline-secondary flex-shrink-0"
+            [disabled]="store.probing()"
+            (click)="store.probeBaseline()"
+          >
+            @if (store.probing()) {
+              <span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>
+            }
+            Retry
+          </button>
+        }
+      </div>
+    }
+
+    <div class="table-responsive">
+      <table class="table table-sm align-middle mb-0 roles">
+        <thead class="table-light">
+          <tr>
+            <th scope="col" style="width: 30%">File</th>
+            <th scope="col" style="width: 26%">Network name</th>
+            <th scope="col" class="text-center" style="width: 10%">Baseline</th>
+            <th scope="col" style="width: 34%">Otherwise</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of rows(); track row.fileName + $index; let i = $index) {
+            <tr [class.table-warning]="row.name === null">
+              <td class="text-break"><code>{{ row.fileName }}</code></td>
+              <td class="text-break">
+                @if (row.name) {
+                  <strong>{{ row.name }}</strong>
+                } @else {
+                  <span class="text-danger">Cannot be named</span>
+                }
+              </td>
+              <td class="text-center">
+                <input
+                  type="radio"
+                  class="form-check-input"
+                  name="batch-baseline"
+                  [attr.aria-label]="'Make ' + row.fileName + ' the baseline of this batch'"
+                  [checked]="row.role === Role.BASELINE"
+                  [disabled]="row.name === null || store.busy()"
+                  (change)="onBaseline(i)"
+                />
+              </td>
+              <td>
+                @if (row.role === Role.BASELINE) {
+                  <span class="text-body-secondary small">
+                    Imported first. Every file marked <em>variant</em> is recorded against it.
+                  </span>
+                } @else if (row.name === null) {
+                  <span class="text-body-secondary small">
+                    Nothing is left of this file’s name once <code>.xlsx</code> is stripped, so it is
+                    refused rather than given an invented one. The rest of the batch is unaffected.
+                  </span>
+                } @else {
+                  <div class="d-flex flex-column gap-1">
+                    <div class="form-check mb-0">
+                      <input
+                        [id]="'role-variant-' + i"
+                        type="radio"
+                        class="form-check-input"
+                        [name]="'role-' + i"
+                        [checked]="row.role === Role.VARIANT"
+                        [disabled]="store.busy()"
+                        (change)="onRole(i, Role.VARIANT)"
+                      />
+                      <label class="form-check-label small" [for]="'role-variant-' + i">
+                        Variant of the baseline
+                      </label>
+                    </div>
+                    <div class="form-check mb-0">
+                      <input
+                        [id]="'role-independent-' + i"
+                        type="radio"
+                        class="form-check-input"
+                        [name]="'role-' + i"
+                        [checked]="row.role === Role.INDEPENDENT"
+                        [disabled]="store.busy()"
+                        (change)="onRole(i, Role.INDEPENDENT)"
+                      />
+                      <label class="form-check-label small" [for]="'role-independent-' + i">
+                        Independent network
+                      </label>
+                    </div>
+                  </div>
+                }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+
+    @if (unnamed().length) {
+      <div class="alert alert-warning py-2 small mt-3 mb-0" role="alert">
+        <strong>{{ unnamed().length }} file(s) cannot be named</strong> and will be refused before
+        anything is sent. Everything else imports normally - rename those files and import them on
+        their own.
+      </div>
+    }
+  </div>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-body">
+    <h3 class="h6">What this will do</h3>
+    @if (plan(); as plan) {
+      <ul class="small mb-3">
+        <li>
+          <strong>{{ sendable() }}</strong> request(s), one per file, in the order above with
+          <strong>{{ plan.baselineName ?? 'the baseline' }}</strong> first. Each file is validated in
+          two stages and committed in <strong>its own transaction</strong>, so a file with a
+          bad row is refused and named while the others are imported.
+        </li>
+        <li>
+          {{ plan.variants }} file(s) recorded as a <code>CONFIGURATION_VARIANT</code> of
+          {{ plan.baselineName ?? 'the baseline' }}, so the batch appears in the lineage under the
+          project’s network table as a fork forest. {{ plan.independents }} file(s) imported
+          with no edge at all.
+        </li>
+        <li>
+          @if (plan.setsBaselineFlag) {
+            The baseline file is also marked as the <strong>project’s baseline</strong>, since this
+            project has none.
+          } @else {
+            The <strong>project’s baseline flag is not touched</strong> - it is only the base of this
+            batch’s edges that is being chosen here.
+          }
+        </li>
+        <li>
+          The column mapping and the time base you confirmed on the previous step apply to
+          <strong>every</strong> file. Files imported together are files of one shape - a
+          file whose headers do not match will report that as its own row-level errors.
+          <strong>Import heterogeneous files one at a time.</strong>
+        </li>
+        <li>
+          A name already used in this project is fine: the server assigns the next version number, so
+          the file becomes a further variant of that name. <strong>Names are editable afterwards from
+          the project’s network table</strong> (FR-29) - a name taken from a file name is a starting
+          point rather than a decision, and renaming is not a structural edit.
+        </li>
+      </ul>
+    }
+  </div>
+
+  <div class="card-footer d-flex justify-content-between gap-2">
+    <button
+      type="button"
+      class="btn btn-outline-secondary"
+      [disabled]="store.busy()"
+      (click)="store.backToMapping()"
+    >
+      Back
+    </button>
+    <button
+      type="button"
+      class="btn btn-primary"
+      [disabled]="!store.canImportBatch()"
+      (click)="store.importBatch()"
+    >
+      @if (store.busy()) {
+        <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+      }
+      Import {{ sendable() }} network(s)
+    </button>
+  </div>
+</div>

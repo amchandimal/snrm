@@ -1,0 +1,73 @@
+/* Value + 95% CI, with an optional whisker. */
+
+:host {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.ci-value {
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  min-width: 0;
+}
+
+.ci-value__mean {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+/* Deliberately quieter than the mean: the interval qualifies the figure, it is not the figure. */
+.ci-value__range {
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  color: #6c757d;
+  white-space: nowrap;
+}
+
+.ci-value__exact {
+  font-size: 0.75rem;
+  color: #adb5bd;
+  font-style: italic;
+}
+
+/* ---------------------------------------------------------------- the whisker */
+
+.ci-whisker {
+  position: relative;
+  display: block;
+  width: 100%;
+  min-width: 3rem;
+  height: 0.75rem;
+}
+
+.ci-whisker__track {
+  position: absolute;
+  inset: 50% 0 auto;
+  height: 1px;
+  transform: translateY(-50%);
+  background: #e9ecef;
+}
+
+.ci-whisker__interval {
+  position: absolute;
+  inset: 50% auto auto;
+  height: 0.375rem;
+  min-width: 2px;
+  transform: translateY(-50%);
+  border-radius: 999px;
+  background: rgba(13, 110, 253, 0.28);
+}
+
+/* The mean, marked on the interval - a tick rather than a dot, so a tight interval still reads. */
+.ci-whisker__mean {
+  position: absolute;
+  inset: 50% auto auto;
+  width: 2px;
+  height: 0.75rem;
+  transform: translate(-1px, -50%);
+  background: #0d6efd;
+}

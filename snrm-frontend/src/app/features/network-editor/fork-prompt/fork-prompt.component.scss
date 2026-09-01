@@ -1,0 +1,21 @@
+/* Same overlay mechanics as `shared/confirm-dialog`: Bootstrap markup, Angular's visibility. */
+
+:host {
+  position: fixed;
+  inset: 0;
+  z-index: 1055;
+}
+
+.fork-backdrop {
+  position: absolute;
+  inset: 0;
+  background-color: rgb(0 0 0 / 45%);
+}
+
+/*
+  The FR-20 alternative. Toned down rather than styled as a second primary action: it is the
+  destructive branch of the choice, and the confirmation it opens is where the weight belongs.
+*/
+.fork-prompt__discard-lead {
+  color: var(--bs-secondary-color, #6c757d);
+}

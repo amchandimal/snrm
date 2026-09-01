@@ -1,0 +1,201 @@
+@if (report(); as report) {
+  <div class="card shadow-sm mb-3">
+    <div class="card-body">
+      @if (title(); as heading) {
+        <h2 class="h5 mb-3">{{ heading }}</h2>
+      }
+
+      <!-- The verdict is the caller's: one is a decision about to be taken, the other is what
+           happened to one file of a batch. See the component's note. -->
+      <ng-content />
+
+      <dl class="row small mb-0">
+        <dt class="col-sm-3">Rows read</dt>
+        <dd class="col-sm-9">
+          @if (rowsRead().length) {
+            @for (entry of rowsRead(); track entry.sheet) {
+              <span class="badge text-bg-light border me-1">{{ entry.sheet }}: {{ entry.rows }}</span>
+            }
+          } @else {
+            <span class="text-body-secondary">No sheets were read.</span>
+          }
+        </dd>
+
+        <dt class="col-sm-3">Time base</dt>
+        <dd class="col-sm-9">
+          {{ periodLabel() }} period · {{ report.timeBase.horizonPeriods }} periods ·
+          {{ report.timeBase.roundingPolicy }} rounding
+          @if (!report.timeBase.declared) {
+            <span class="text-body-secondary">(assumed - no network_meta sheet)</span>
+          }
+        </dd>
+
+        <dt class="col-sm-3">Findings</dt>
+        <dd class="col-sm-9 mb-0">
+          <span class="badge text-bg-danger me-1">{{ report.errorCount }} error(s)</span>
+          <span class="badge text-bg-warning">{{ report.warningCount }} warning(s)</span>
+        </dd>
+      </dl>
+
+      @if (!report.graphComplete) {
+        <div class="alert alert-warning small mt-3 mb-0" role="alert">
+          Some rows were rejected, so the network-level findings below describe the graph
+          <em>without</em> them. Fix the row errors and validate again before reading them as final.
+        </div>
+      }
+    </div>
+  </div>
+
+  @if (errors().length) {
+    <div class="card shadow-sm mb-3 border-danger-subtle">
+      <div class="card-header bg-danger-subtle">
+        <h3 class="h6 mb-0">Errors - these must be fixed</h3>
+      </div>
+      <div class="card-body p-0">
+        @for (group of errors(); track group.sheet) {
+          <h4 class="h6 px-3 pt-3 mb-2"><code>{{ group.sheet }}</code></h4>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0 diagnostics">
+              <thead class="table-light">
+                <tr>
+                  <th scope="col" class="line">Line</th>
+                  <th scope="col">Column / element</th>
+                  <th scope="col">Value</th>
+                  <th scope="col">Problem</th>
+                  <th scope="col" class="code">Code</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (row of group.rows; track $index) {
+                  <tr>
+                    <td class="line">{{ row.line ?? '-' }}</td>
+                    <td class="text-break">
+                      @if (row.column) {
+                        <code>{{ row.column }}</code>
+                      }
+                      @if (row.element) {
+                        <span class="d-block text-body-secondary small">{{ row.element }}</span>
+                      }
+                      @if (!row.column && !row.element) {
+                        <span class="text-body-secondary">-</span>
+                      }
+                    </td>
+                    <td class="text-break">
+                      @if (row.value) {
+                        <code>{{ row.value }}</code>
+                      } @else {
+                        <span class="text-body-secondary">-</span>
+                      }
+                    </td>
+                    <td>{{ row.message }}</td>
+                    <td class="code"><span class="text-body-secondary small">{{ row.code }}</span></td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+      </div>
+    </div>
+  }
+
+  @if (warnings().length) {
+    <div class="card shadow-sm mb-3 border-warning-subtle">
+      <div class="card-header bg-warning-subtle">
+        <h3 class="h6 mb-0">Warnings - the import can proceed</h3>
+      </div>
+      <div class="card-body p-0">
+        @for (group of warnings(); track group.sheet) {
+          <h4 class="h6 px-3 pt-3 mb-2"><code>{{ group.sheet }}</code></h4>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0 diagnostics">
+              <thead class="table-light">
+                <tr>
+                  <th scope="col" class="line">Line</th>
+                  <th scope="col">Column / element</th>
+                  <th scope="col">Note</th>
+                  <th scope="col" class="code">Code</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (row of group.rows; track $index) {
+                  <tr>
+                    <td class="line">{{ row.line ?? '-' }}</td>
+                    <td class="text-break">
+                      @if (row.column) {
+                        <code>{{ row.column }}</code>
+                      }
+                      @if (row.element) {
+                        <span class="d-block text-body-secondary small">{{ row.element }}</span>
+                      }
+                      @if (!row.column && !row.element) {
+                        <span class="text-body-secondary">-</span>
+                      }
+                    </td>
+                    <td>{{ row.message }}</td>
+                    <td class="code"><span class="text-body-secondary small">{{ row.code }}</span></td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+      </div>
+    </div>
+  }
+
+  @if (timeFindings().length) {
+    <div class="card shadow-sm mb-3">
+      <div class="card-header">
+        <h3 class="h6 mb-0">Time resolution</h3>
+      </div>
+      <div class="card-body">
+        <p class="small text-body-secondary">
+          What a period of {{ periodLabel() }} does to the durations in this file. A duration that
+          converts to zero periods is an <strong>error during import</strong> - it would silently become
+          instantaneous, and a lead time that vanishes flatters the network.
+        </p>
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th scope="col">Element</th>
+                <th scope="col">Field</th>
+                <th scope="col">Declared</th>
+                <th scope="col">In periods</th>
+                <th scope="col">Error</th>
+                <th scope="col">Finding</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (finding of timeFindings(); track $index) {
+                <tr>
+                  <td class="text-break">{{ finding.elementName }}</td>
+                  <td><code>{{ finding.field }}</code></td>
+                  <td>{{ duration(finding) }}</td>
+                  <td>{{ finding.convertedPeriods ?? '-' }}</td>
+                  <td>{{ errorPercent(finding) }}</td>
+                  <td>
+                    <span
+                      class="badge me-1"
+                      [class.text-bg-danger]="finding.severity === 'ERROR'"
+                      [class.text-bg-warning]="finding.severity === 'WARNING'"
+                    >{{ finding.code }}</span>
+                    <span class="d-block small">{{ finding.message }}</span>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        @if (suggestedPeriod(); as suggested) {
+          <p class="small mb-0 mt-3">
+            <strong>Suggested period: {{ suggested }}</strong> - the coarsest period that keeps every
+            duration in this file within 10%. Set it in the previous step to import against it, or accept
+            the current period and adjust in the editor afterwards.
+          </p>
+        }
+      </div>
+    </div>
+  }
+}

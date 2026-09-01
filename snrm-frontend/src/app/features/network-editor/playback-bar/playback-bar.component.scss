@@ -1,0 +1,103 @@
+/* The transport bar "Visual playback" (FR-18).
+
+   HTML over the Cytoscape canvas, like the node tooltip - Cytoscape draws into a `<canvas>`, so
+   there is nothing in the DOM to anchor a control to. Unlike the tooltip this one *takes* pointer
+   events: it is a control, not a label. The host is absolutely positioned against
+   `.editor__canvas`, which is `position: relative` for exactly this. */
+
+:host {
+  position: absolute;
+  left: 50%;
+  bottom: 1rem;
+  transform: translateX(-50%);
+  /* Above the canvas and the loading veil, below the modals. */
+  z-index: 6;
+  max-width: calc(100% - 2rem);
+  pointer-events: auto;
+}
+
+.playback-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.3125rem 0.5rem;
+  border: 1px solid #dee2e6;
+  border-radius: 2rem;
+  background: rgb(255 255 255 / 94%);
+  box-shadow: 0 0.125rem 0.5rem rgb(33 37 41 / 18%);
+  font-size: 0.8125rem;
+  white-space: nowrap;
+}
+
+.playback-bar__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  background: transparent;
+  color: #343a40;
+  font-size: 0.875rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.playback-bar__button:hover {
+  background: #eef1f4;
+}
+
+.playback-bar__button:focus-visible {
+  outline: 2px solid #0d6efd;
+  outline-offset: 1px;
+}
+
+/* Play/pause is the one control the eye returns to, so it carries the accent. */
+.playback-bar__button--primary {
+  background: #0d6efd;
+  color: #fff;
+}
+
+.playback-bar__button--primary:hover {
+  background: #0b5ed7;
+}
+
+.playback-bar__scrub {
+  width: 14rem;
+  max-width: 40vw;
+  accent-color: #0d6efd;
+  cursor: pointer;
+}
+
+/* Tabular figures so the period number does not shuffle the clock line as it counts up. */
+.playback-bar__clock {
+  color: #343a40;
+  font-variant-numeric: tabular-nums;
+}
+
+.playback-bar__speed {
+  padding: 0.125rem 0.25rem;
+  border: 1px solid #ced4da;
+  border-radius: 0.25rem;
+  background: #fff;
+  color: #343a40;
+  font-size: 0.75rem;
+}
+
+/* "element detail unavailable for this run" - a note about what is missing, not a warning about
+   something that went wrong. Muted, and it wraps rather than widening the bar off the canvas. */
+.playback-bar__note {
+  max-width: 14rem;
+  color: #6c757d;
+  font-size: 0.6875rem;
+  white-space: normal;
+  line-height: 1.2;
+}
+
+@media (max-width: 1200px) {
+  .playback-bar__scrub {
+    width: 9rem;
+  }
+}

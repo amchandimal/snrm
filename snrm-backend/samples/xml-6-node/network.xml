@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The minimal 6-node network of samples/minimal-6-node/, expressed in the XML interchange format
+  — one self-describing file instead of five CSVs, and carrying the canvas layout the tabular
+  form of that sample leaves out.
+
+  Import it exactly as the CSV samples are imported: attach this one file. No column mapping step is
+  offered, because the document names its own fields.
+
+  It also carries the captions of FR-30, and three ways deliberately:
+    * DC-1 states caption and captionVisible="true" — the ordinary shown annotation;
+    * PLANT-1 states a caption and captionVisible="false" — written, kept, not drawn;
+    * SUP-1 and the PLANT-1 → DC-1 link state a caption and NO captionVisible at all, which
+      reads as VISIBLE. Export this network again and those two come back with an explicit
+      captionVisible="true": the export always writes both halves of the pair, so the meaning is the
+      same and the document is no longer relying on a default.
+-->
+<snrm-network schemaVersion="1">
+
+  <meta name="XML 6-node" horizonPeriods="52" roundingPolicy="NEAREST">
+    <periodLength value="1" unit="DAY"/>
+  </meta>
+
+  <nodes>
+    <node name="SUP-1" type="SUPPLIER" fixedCost="1000" varCost="2" failureProb="0.02"
+          region="EU-West" lat="52.37" lng="4.90" posX="80" posY="300"
+          caption="Sole source — 6-week qualification">
+      <capacity value="500" timeUnit="DAY"/>
+      <processingTime value="0" unit="DAY"/>
+    </node>
+    <node name="PLANT-1" type="PLANT" fixedCost="5000" varCost="5" failureProb="0.01"
+          region="EU-West" lat="51.22" lng="6.78" posX="300" posY="300"
+          caption="Two lines; second one idle since Q1" captionVisible="false">
+      <capacity value="400" timeUnit="DAY"/>
+      <processingTime value="1" unit="DAY"/>
+    </node>
+    <node name="DC-1" type="DC" fixedCost="1200" varCost="1" failureProb="0.01"
+          region="EU-North" lat="59.33" lng="18.07" posX="520" posY="190"
+          caption="Nordic hub — 3PL operated" captionVisible="true">
+      <capacity value="350" timeUnit="DAY"/>
+      <processingTime value="0" unit="DAY"/>
+    </node>
+    <node name="DC-2" type="DC" fixedCost="1200" varCost="1" failureProb="0.03"
+          region="EU-South" lat="41.90" lng="12.50" posX="520" posY="410">
+      <capacity value="350" timeUnit="DAY"/>
+      <processingTime value="0" unit="DAY"/>
+    </node>
+    <node name="CUST-1" type="CUSTOMER" fixedCost="0" varCost="0" failureProb="0"
+          region="EU-North" lat="60.17" lng="24.94" posX="740" posY="140">
+      <capacity timeUnit="DAY"/>
+    </node>
+    <node name="CUST-2" type="CUSTOMER" fixedCost="0" varCost="0" failureProb="0"
+          region="EU-South" lat="37.98" lng="23.73" posX="740" posY="460">
+      <capacity timeUnit="DAY"/>
+    </node>
+  </nodes>
+
+  <links>
+    <link source="SUP-1" target="PLANT-1" unitCost="3" failureProb="0.01">
+      <leadTime value="2" unit="DAY"/>
+      <capacity value="500" timeUnit="DAY"/>
+    </link>
+    <link source="PLANT-1" target="DC-1" unitCost="4" failureProb="0.02"
+          caption="Contracted road leg, no alternative carrier">
+      <leadTime value="3" unit="DAY"/>
+      <capacity value="300" timeUnit="DAY"/>
+    </link>
+    <link source="PLANT-1" target="DC-2" unitCost="4" failureProb="0.02">
+      <leadTime value="4" unit="DAY"/>
+      <capacity value="300" timeUnit="DAY"/>
+    </link>
+    <link source="DC-1" target="CUST-1" unitCost="2" failureProb="0.01">
+      <leadTime value="1" unit="DAY"/>
+      <capacity value="200" timeUnit="DAY"/>
+    </link>
+    <link source="DC-2" target="CUST-2" unitCost="2" failureProb="0.01">
+      <leadTime value="1" unit="DAY"/>
+      <capacity value="200" timeUnit="DAY"/>
+    </link>
+    <link source="DC-1" target="CUST-2" unitCost="3" failureProb="0.02">
+      <leadTime value="2" unit="DAY"/>
+      <capacity value="150" timeUnit="DAY"/>
+    </link>
+  </links>
+
+  <products>
+    <product name="WIDGET-A" unitValue="25"/>
+  </products>
+
+  <nodeProducts>
+    <nodeProduct node="CUST-1" product="WIDGET-A" initialInventory="0" safetyStock="0">
+      <demand value="40" timeUnit="DAY"/>
+    </nodeProduct>
+    <nodeProduct node="CUST-2" product="WIDGET-A" initialInventory="0" safetyStock="0">
+      <demand value="25" timeUnit="DAY"/>
+    </nodeProduct>
+    <nodeProduct node="DC-1" product="WIDGET-A" initialInventory="120" safetyStock="60">
+      <demand value="0" timeUnit="DAY"/>
+      <holdingCost value="0.1" timeUnit="DAY"/>
+    </nodeProduct>
+    <nodeProduct node="DC-2" product="WIDGET-A" initialInventory="120" safetyStock="60">
+      <demand value="0" timeUnit="DAY"/>
+      <holdingCost value="0.1" timeUnit="DAY"/>
+    </nodeProduct>
+    <nodeProduct node="PLANT-1" product="WIDGET-A" initialInventory="200" safetyStock="80">
+      <demand value="0" timeUnit="DAY"/>
+      <holdingCost value="0.05" timeUnit="DAY"/>
+    </nodeProduct>
+    <nodeProduct node="SUP-1" product="WIDGET-A" initialInventory="300" safetyStock="100">
+      <demand value="0" timeUnit="DAY"/>
+      <holdingCost value="0.02" timeUnit="DAY"/>
+    </nodeProduct>
+  </nodeProducts>
+
+</snrm-network>

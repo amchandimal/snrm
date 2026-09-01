@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<snrm-network schemaVersion="1">
+  <meta name="Playback 4-chain" horizonPeriods="30" roundingPolicy="NEAREST">
+    <periodLength value="1" unit="DAY"/>
+  </meta>
+  <nodes>
+    <node name="SUP-1" type="SUPPLIER" fixedCost="100" varCost="0.1" failureProb="0" posX="80" posY="300">
+      <capacity value="100" timeUnit="DAY"/>
+      <processingTime value="0" unit="DAY"/>
+    </node>
+    <node name="PLANT-1" type="PLANT" fixedCost="200" varCost="0" failureProb="0" posX="300" posY="300">
+      <capacity value="100" timeUnit="DAY"/>
+      <processingTime value="0" unit="DAY"/>
+    </node>
+    <node name="DC-1" type="DC" fixedCost="100" varCost="0" failureProb="0" posX="520" posY="300">
+      <capacity value="100" timeUnit="DAY"/>
+      <processingTime value="0" unit="DAY"/>
+    </node>
+    <node name="CUST-1" type="CUSTOMER" fixedCost="0" varCost="0" failureProb="0" posX="740" posY="300">
+      <capacity timeUnit="DAY"/>
+      <processingTime value="0" unit="DAY"/>
+    </node>
+  </nodes>
+  <links>
+    <link source="SUP-1" target="PLANT-1" unitCost="0" failureProb="0">
+      <leadTime value="1" unit="DAY"/>
+      <capacity value="100" timeUnit="DAY"/>
+    </link>
+    <link source="PLANT-1" target="DC-1" unitCost="0" failureProb="0">
+      <leadTime value="1" unit="DAY"/>
+      <capacity value="100" timeUnit="DAY"/>
+    </link>
+    <link source="DC-1" target="CUST-1" unitCost="0" failureProb="0">
+      <leadTime value="1" unit="DAY"/>
+      <capacity value="100" timeUnit="DAY"/>
+    </link>
+  </links>
+  <products>
+    <product name="WIDGET-A" unitValue="20"/>
+  </products>
+  <nodeProducts>
+    <nodeProduct node="SUP-1" product="WIDGET-A" initialInventory="10" safetyStock="10">
+      <demand value="0" timeUnit="DAY"/>
+      <holdingCost value="0.1" timeUnit="DAY"/>
+    </nodeProduct>
+    <nodeProduct node="PLANT-1" product="WIDGET-A" initialInventory="15" safetyStock="5">
+      <demand value="0" timeUnit="DAY"/>
+      <holdingCost value="0.1" timeUnit="DAY"/>
+    </nodeProduct>
+    <nodeProduct node="DC-1" product="WIDGET-A" initialInventory="15" safetyStock="5">
+      <demand value="0" timeUnit="DAY"/>
+      <holdingCost value="0.1" timeUnit="DAY"/>
+    </nodeProduct>
+    <nodeProduct node="CUST-1" product="WIDGET-A" initialInventory="20" safetyStock="0">
+      <demand value="10" timeUnit="DAY"/>
+    </nodeProduct>
+  </nodeProducts>
+</snrm-network>

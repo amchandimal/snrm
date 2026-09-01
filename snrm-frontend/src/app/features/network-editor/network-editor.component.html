@@ -1,0 +1,425 @@
+<div class="editor">
+  <!-- ------------------------------------------------------------------- toolbar -->
+  <header class="editor__toolbar">
+    <nav class="editor__breadcrumb" aria-label="breadcrumb">
+      <a [routerLink]="['/projects', projectId()]">← Project</a>
+      <span class="editor__network">
+        {{ store.network()?.name ?? 'Network' }}
+        @if (store.network(); as network) {
+          <span class="id-chip">v{{ network.version }} · #{{ network.id }}</span>
+          @if (!network.editable) {
+            <span class="badge text-bg-secondary">Frozen</span>
+          }
+        }
+      </span>
+    </nav>
+
+    <div class="editor__actions">
+      <button
+        type="button"
+        class="btn btn-sm btn-outline-secondary"
+        [disabled]="!store.stack.canUndo() || store.stack.busy()"
+        [title]="store.stack.nextUndo() ? 'Undo: ' + store.stack.nextUndo() : 'Nothing to undo'"
+        (click)="undo()"
+      >
+        ↶ Undo
+      </button>
+      <button
+        type="button"
+        class="btn btn-sm btn-outline-secondary"
+        [disabled]="!store.stack.canRedo() || store.stack.busy()"
+        [title]="store.stack.nextRedo() ? 'Redo: ' + store.stack.nextRedo() : 'Nothing to redo'"
+        (click)="redo()"
+      >
+        ↷ Redo
+      </button>
+
+      <span class="editor__divider" aria-hidden="true"></span>
+
+      <button
+        type="button"
+        class="btn btn-sm btn-outline-secondary"
+        title="Layer the network left to right by echelon (cytoscape-dagre)"
+        [disabled]="store.isLoading()"
+        (click)="requestAutoLayout()"
+      >
+        Auto-layout
+      </button>
+      <button type="button" class="btn btn-sm btn-outline-secondary" (click)="fit()">Fit</button>
+      <button
+        type="button"
+        class="btn btn-sm"
+        [class.btn-secondary]="store.gridSnap()"
+        [class.btn-outline-secondary]="!store.gridSnap()"
+        [attr.aria-pressed]="store.gridSnap()"
+        title="Snap dragged nodes to a 20px grid"
+        (click)="store.toggleGridSnap()"
+      >
+        Grid snap
+      </button>
+      <button
+        type="button"
+        class="btn btn-sm"
+        [class.btn-secondary]="store.boxSelect()"
+        [class.btn-outline-secondary]="!store.boxSelect()"
+        [attr.aria-pressed]="store.boxSelect()"
+        title="Drag on empty canvas to rubber-band select instead of panning"
+        (click)="store.toggleBoxSelect()"
+      >
+        Box select
+      </button>
+
+      <span class="editor__divider" aria-hidden="true"></span>
+
+      <!--
+        The metrics side panel. Closed by default and computed only while open (or while
+        node size encodes criticality), because the suite is the most expensive synchronous thing
+        the API does - NODE_CRITICALITY is one maximum flow per node.
+      -->
+      <button
+        type="button"
+        class="btn btn-sm"
+        [class.btn-secondary]="metricsOpen()"
+        [class.btn-outline-secondary]="!metricsOpen()"
+        [attr.aria-pressed]="metricsOpen()"
+        title="Show the topological metric suite for this network - density, single points of failure (nodes, arcs and total), path length, clustering, criticality and robustness"
+        [disabled]="store.isLoading() || !store.network()"
+        (click)="toggleMetrics()"
+      >
+        📊 Metrics
+        @if (metrics.stale() && metrics.hasMetrics()) {
+          <span class="editor__stale-dot" title="The network has changed since these were computed" aria-hidden="true"></span>
+        }
+      </button>
+
+      <!--
+        The disruptions panel (FR-16). Available on a frozen network exactly as on an
+        editable one: a scenario is a different aggregate, so authoring one is not an edit - see the
+        panel itself, which says so on screen rather than leaving it to be discovered.
+      -->
+      <button
+        type="button"
+        class="btn btn-sm"
+        [class.btn-secondary]="disruptionsOpen()"
+        [class.btn-outline-secondary]="!disruptionsOpen()"
+        [attr.aria-pressed]="disruptionsOpen()"
+        title="Author a disruption scenario against this network - targets are picked on the canvas rather than from a dropdown"
+        [disabled]="store.isLoading() || !store.network()"
+        (click)="toggleDisruptions()"
+      >
+        ⚡ Disruptions
+        @if (disruptions.overlay().nodes.size + disruptions.overlay().links.size; as struck) {
+          <span class="editor__struck-count" title="Elements of this network the open scenario strikes">{{ struck }}</span>
+        }
+      </button>
+
+      <!--
+        The run panel (FR-17). The progress lives on the button as well as in the panel,
+        so a run launched here is never invisible while the panel is closed.
+      -->
+      <button
+        type="button"
+        class="btn btn-sm"
+        [class.btn-secondary]="runOpen()"
+        [class.btn-outline-secondary]="!runOpen()"
+        [attr.aria-pressed]="runOpen()"
+        title="Run a baseline or a disruption scenario against this network and read the report in place (FR-17)"
+        [disabled]="store.isLoading() || !store.network()"
+        (click)="toggleRun()"
+      >
+        ▶ Run
+        @if (runs.running()) {
+          <span class="editor__run-progress" title="The run in flight">{{ runs.progressPercent() }}%</span>
+        }
+      </button>
+
+      <span class="editor__divider" aria-hidden="true"></span>
+
+      <!-- The network clock. The label is the current period × horizon. -->
+      <button
+        type="button"
+        class="btn btn-sm btn-outline-secondary"
+        title="Period length, horizon and rounding policy - the clock every duration is discretised against"
+        [disabled]="store.isLoading() || !store.network()"
+        (click)="openTimeSettings()"
+      >
+        ⏱ {{ timeBaseLabel() }}
+      </button>
+
+      <span class="editor__divider" aria-hidden="true"></span>
+
+      <!--
+        Export in the canonical schema. Pending canvas edits are flushed first, so the
+        file describes what is on screen rather than what was last sent - see exportNetwork().
+      -->
+      <div class="btn-group btn-group-sm" role="group" aria-label="Export this network">
+        <button
+          type="button"
+          class="btn btn-outline-secondary"
+          title="Download the full XML document: everything this network holds, canvas layout included, in one self-describing file"
+          [disabled]="!store.network() || exports.busyFor() !== null"
+          (click)="exportNetwork('xml')"
+        >
+          @if (exports.busyFor() !== null) {
+            <span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>
+          }
+          ⭳ Export XML
+        </button>
+        <button
+          type="button"
+          class="btn btn-outline-secondary"
+          title="Download as one .xlsx workbook in the canonical import schema. Edit it and re-import to create a variant."
+          [disabled]="!store.network() || exports.busyFor() !== null"
+          (click)="exportNetwork('xlsx')"
+        >
+          XLSX
+        </button>
+        <button
+          type="button"
+          class="btn btn-outline-secondary"
+          title="Download the five canonical CSV files as a zip"
+          [disabled]="!store.network() || exports.busyFor() !== null"
+          (click)="exportNetwork('csv')"
+        >
+          CSV
+        </button>
+      </div>
+
+      <button
+        type="button"
+        class="btn btn-sm btn-outline-danger"
+        [disabled]="!canDelete() || preparingDelete()"
+        title="Delete the selection (Del)"
+        (click)="requestDelete()"
+      >
+        @if (preparingDelete()) {
+          <span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>
+        }
+        Delete
+      </button>
+
+      <span class="editor__spacer"></span>
+
+      <span class="editor__save editor__save--{{ persistence.status() }}" aria-live="polite">
+        <span class="editor__save-dot" aria-hidden="true"></span>
+        {{ saveLabel() }}
+      </span>
+      @if (persistence.status() === 'unsaved' || persistence.status() === 'error') {
+        <button type="button" class="btn btn-sm btn-outline-primary" (click)="saveNow()">
+          Save now
+        </button>
+      }
+      @if (persistence.status() === 'error') {
+        <button
+          type="button"
+          class="btn btn-sm btn-outline-danger"
+          title="Throw away the unsent edits and reload the network from the server"
+          (click)="discardUnsaved()"
+        >
+          Discard
+        </button>
+      }
+    </div>
+  </header>
+
+  <!-- -------------------------------------------------------------------- banners -->
+  @if (store.readOnly()) {
+    <div class="alert alert-warning editor__banner d-flex justify-content-between align-items-center gap-3" role="alert">
+      <span>
+        A simulation run has frozen this network, so it cannot be edited. Fork a
+        configuration variant to keep the result and carry on - or discard the runs to edit this
+        network in place (FR-20).
+      </span>
+      <span class="d-flex gap-2 flex-shrink-0">
+        <button type="button" class="btn btn-sm btn-warning" (click)="store.openForkPrompt()">
+          Fork a variant
+        </button>
+        <!--
+          The exit, made discoverable without attempting an edit first (FR-20). Reads the
+          network's runs before deciding whether to open the confirmation, so a run still executing
+          is answered with a sentence rather than with a dialog that would 409.
+        -->
+        <button
+          type="button"
+          class="btn btn-sm btn-outline-danger"
+          [disabled]="store.loadingRuns() || store.discarding()"
+          title="Delete this network's simulation runs so it can be edited again. You will be asked to type the network name and version."
+          (click)="requestDiscardRuns()"
+        >
+          @if (store.loadingRuns()) {
+            <span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>
+          }
+          Unlock…
+        </button>
+      </span>
+    </div>
+  }
+
+  @if (store.error(); as message) {
+    <div class="alert alert-danger editor__banner" role="alert">{{ message }}</div>
+  }
+
+  @if (exportNote() ?? exports.error(); as message) {
+    <div
+      class="alert alert-warning editor__banner d-flex justify-content-between align-items-start"
+      role="alert"
+    >
+      <span>{{ message }}</span>
+      <button
+        type="button"
+        class="btn-close"
+        aria-label="Dismiss"
+        (click)="dismissExportNote(); exports.dismissError()"
+      ></button>
+    </div>
+  }
+
+  @if (store.actionError(); as message) {
+    <div class="alert alert-danger editor__banner d-flex justify-content-between align-items-start" role="alert">
+      <span>{{ message }}</span>
+      <button type="button" class="btn-close" aria-label="Dismiss" (click)="store.dismissActionError()"></button>
+    </div>
+  }
+
+  @if (persistence.saveError(); as message) {
+    <div class="alert alert-warning editor__banner" role="alert">
+      <strong>Unsaved.</strong> {{ message }} Your edits are still here - fix the cause and press
+      <em>Save now</em>, or discard them.
+    </div>
+  }
+
+  <!-- Durations that do not survive the current period. -->
+  <app-time-warning-banner />
+
+  <!-- --------------------------------------------------------------------- layout -->
+  <div class="editor__body">
+    <aside class="editor__palette">
+      <app-node-palette
+        [lastUsedType]="store.lastUsedType()"
+        [disabled]="store.readOnly()"
+        (typePicked)="onTypePicked($event)"
+      />
+    </aside>
+
+    <main class="editor__canvas">
+      @if (store.isLoading()) {
+        <p class="editor__loading">Loading the network…</p>
+      }
+      <app-graph-canvas
+        (elementCreated)="onElementCreated()"
+        (blockedByReadOnly)="store.openForkPrompt()"
+      />
+      <!--
+        The playback transport (FR-18), over the canvas rather than in the toolbar: the
+        eye watching a node fill should not have to travel to the top of the screen to step a
+        period. Present only when a completed run is loaded, so no control on it needs a disabled
+        state - `playback.enabled()` is the one gate, and it is the same one the keyboard uses.
+      -->
+      @if (playback.enabled()) {
+        <app-playback-bar />
+      }
+    </main>
+
+    @if (metricsOpen()) {
+      <aside class="editor__metrics">
+        <app-metrics-panel />
+      </aside>
+    }
+
+    @if (disruptionsOpen()) {
+      <aside class="editor__disruptions">
+        <app-disruptions-panel />
+      </aside>
+    }
+
+    @if (runOpen()) {
+      <aside class="editor__run">
+        <app-run-panel />
+      </aside>
+    }
+
+    <aside class="editor__panel">
+      <app-property-panel />
+    </aside>
+  </div>
+</div>
+
+<!-- --------------------------------------------------------------------- dialogs -->
+@if (dialog() === 'delete') {
+  <app-confirm-dialog
+    title="Delete selection"
+    [message]="deleteMessage()"
+    [details]="deleteDetails()"
+    confirmLabel="Delete"
+    [destructive]="true"
+    (confirmed)="confirmDelete()"
+    (cancelled)="dialog.set('none')"
+  />
+}
+
+@if (dialog() === 'relayout') {
+  <app-confirm-dialog
+    title="Replace the manual layout?"
+    message="This network already has manual node positions. Auto-layout will overwrite every one of them."
+    [details]="['Undo (Ctrl-Z) puts the old positions back as a single step.']"
+    confirmLabel="Run auto-layout"
+    (confirmed)="confirmAutoLayout()"
+    (cancelled)="dialog.set('none')"
+  />
+}
+
+@if (dialog() === 'leave') {
+  <app-confirm-dialog
+    title="Leave with unsaved edits?"
+    message="Some canvas edits could not be saved to the server. Leaving the editor discards them."
+    confirmLabel="Leave and discard"
+    cancelLabel="Stay"
+    [destructive]="true"
+    (confirmed)="resolveLeave(true)"
+    (cancelled)="resolveLeave(false)"
+  />
+}
+
+@if (store.network(); as network) {
+  @if (dialog() === 'time') {
+    <app-time-settings-dialog
+      [network]="network"
+      [busy]="store.timeBaseBusy()"
+      (applied)="applyTimeBase($event)"
+      (cancelled)="dialog.set('none')"
+    />
+  }
+
+  @if (store.forkPromptOpen()) {
+    <app-fork-prompt
+      [network]="network"
+      [busy]="store.forking()"
+      (forked)="onForked($event)"
+      (discardRequested)="requestDiscardRuns()"
+      (cancelled)="store.closeForkPrompt()"
+    />
+  }
+}
+
+<!--
+  The typed discard confirmation of FR-20. One dialog, two entrances - the frozen banner's
+  "Unlock…" and the fork prompt's third choice - so the two cannot drift into asking different
+  questions. Its wording and its required phrase come from `run-discard.ts`, which is specced.
+-->
+@if (store.discardPromptOpen()) {
+  @if (store.discardConfirm(); as confirm) {
+    <app-confirm-dialog
+      [title]="confirm.title"
+      [message]="confirm.message"
+      [details]="confirm.details"
+      [confirmLabel]="confirm.confirmLabel"
+      cancelLabel="Keep the runs"
+      [destructive]="true"
+      [busy]="store.discarding()"
+      [requiredPhrase]="confirm.requiredPhrase"
+      [phraseLabel]="confirm.phraseLabel"
+      (confirmed)="confirmDiscardRuns()"
+      (cancelled)="store.closeDiscardPrompt()"
+    />
+  }
+}

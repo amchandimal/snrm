@@ -1,0 +1,14 @@
+/* Restore a project archive - the report block. */
+
+/*
+  Findings are read top to bottom, so they are a flush list rather than a table: each one is a
+  sentence, and a sentence in a table cell wraps into a column narrower than it deserves.
+*/
+.findings > .list-group-item:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.findings > .list-group-item:last-child {
+  padding-bottom: 0;
+}

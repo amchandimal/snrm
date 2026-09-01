@@ -1,0 +1,98 @@
+/* Same overlay mechanics as `fork-prompt` and `shared/confirm-dialog`: Bootstrap markup, Angular's
+   visibility. */
+
+:host {
+  position: fixed;
+  inset: 0;
+  z-index: 1055;
+}
+
+.time-backdrop {
+  position: absolute;
+  inset: 0;
+  background-color: rgb(0 0 0 / 45%);
+}
+
+.modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+}
+
+.time-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  align-items: flex-start;
+}
+
+.time-label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #495057;
+}
+
+.time-hint,
+.time-note {
+  font-size: 0.75rem;
+  color: #6c757d;
+  line-height: 1.4;
+}
+
+.time-note {
+  color: #0a58ca;
+}
+
+.time-error {
+  font-size: 0.75rem;
+  color: #dc3545;
+  margin: 0;
+}
+
+/* The consequence a period change hides: same horizon, different wall clock. */
+.time-span {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  background: #f1f6ff;
+  border: 1px solid #cfe2ff;
+  border-radius: 0.375rem;
+  padding: 0.5rem 0.625rem;
+}
+
+/* Playback speed (FR-18).
+
+   The rule above it is doing real work: everything higher in the dialog is the time base, saved
+   together on Apply and refused on a frozen network; this row is a device-local view preference
+   that saves itself the moment it changes. A reader who cannot see the seam would reasonably expect
+   Apply to be involved. */
+.playback-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  align-items: flex-start;
+  border-top: 1px solid #dee2e6;
+  margin-top: 0.25rem;
+  padding-top: 0.875rem;
+}
+
+/* The pace line is the answer to "what does 2 periods a second mean here", so it reads as a
+   statement about this network rather than as another grey hint. */
+.playback-pace {
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: #0a58ca;
+}
+
+.time-frozen {
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: #8a6100;
+  background: #fff8e6;
+  border: 1px solid #ffe1a3;
+  border-radius: 0.375rem;
+  padding: 0.5rem 0.625rem;
+  margin: 0;
+}

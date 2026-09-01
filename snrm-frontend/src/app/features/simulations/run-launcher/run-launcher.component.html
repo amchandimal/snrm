@@ -1,0 +1,361 @@
+<!-- Run launcher and job monitor (FR-06). -->
+<div class="container app-view">
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+      <li class="breadcrumb-item"><a routerLink="/projects">Projects</a></li>
+      <li class="breadcrumb-item">
+        <a [routerLink]="['/projects', projectId()]">Project</a>
+      </li>
+      <li class="breadcrumb-item active" aria-current="page">Run simulation</li>
+    </ol>
+  </nav>
+
+  <div class="d-flex align-items-baseline justify-content-between mb-3">
+    <div>
+      <h1 class="h3 mb-1">Run a simulation</h1>
+      <p class="text-body-secondary mb-0">
+        Evaluate one configuration against one disruption scenario over the network's horizon.
+        Results appear as a dashboard you can export.
+      </p>
+    </div>
+    <a class="btn btn-sm btn-outline-primary" [routerLink]="['/projects', projectId(), 'comparison']">
+      Compare variants
+    </a>
+  </div>
+
+  @if (store.error(); as message) {
+    <div class="alert alert-danger d-flex justify-content-between align-items-start" role="alert">
+      <span>{{ message }}</span>
+      <button type="button" class="btn-close" aria-label="Dismiss" (click)="store.dismissError()"></button>
+    </div>
+  }
+
+  @if (store.isLoading()) {
+    <p class="text-body-secondary">Loading networks and scenarios…</p>
+  }
+
+  <div class="row g-4">
+    <!-- ------------------------------------------------------------------ the form -->
+    <div class="col-lg-7">
+      <div class="card">
+        <div class="card-body">
+          <h2 class="h6 mb-3">What to evaluate</h2>
+
+          <div class="mb-3">
+            <label class="form-label" for="network">Network</label>
+            <select
+              id="network"
+              class="form-select"
+              [ngModel]="networkId()"
+              (ngModelChange)="networkId.set($event)"
+              [disabled]="store.running()"
+            >
+              <option [ngValue]="null">Choose a configuration…</option>
+              @for (network of store.networks(); track network.id) {
+                <option [ngValue]="network.id">
+                  {{ network.name }} v{{ network.version }}{{ network.baseline ? ' · baseline' : '' }}
+                </option>
+              }
+            </select>
+            @if (network(); as chosen) {
+              <div class="form-text">
+                Steps in {{ periodLabel() }}, horizon {{ horizonLabel() }}.
+                @if (chosen.editable) {
+                  <!--
+                    Creating the run row is what freezes the network, so this is true from
+                    the moment the 202 returns - not once the job finishes. Said before the button is
+                    pressed, because afterwards the choice has been made.
+                  -->
+                  <span class="text-warning-emphasis">
+                    Submitting freezes this network - later edits must fork a variant. Cancelling
+                    releases it.
+                  </span>
+                } @else {
+                  <span class="text-body-secondary">
+                    Already frozen by an earlier run; running again changes nothing about it.
+                  </span>
+                }
+              </div>
+            }
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label" for="scenario">Disruption scenario</label>
+            <select
+              id="scenario"
+              class="form-select"
+              [ngModel]="scenarioChoice()"
+              (ngModelChange)="onScenarioChoice($event)"
+              [disabled]="store.running()"
+            >
+              <option [ngValue]="null">Choose a scenario…</option>
+              <!-- The baseline run of FR-17: no scenario at all, which is a different thing from a
+                   scenario with no events - it runs N replications rather than 2N, and it is the
+                   comparator every disrupted run is read against. -->
+              <option [ngValue]="BASELINE">Baseline - no scenario (FR-17)</option>
+              @for (scenario of store.scenarios(); track scenario.id) {
+                <option [ngValue]="scenario.id">
+                  {{ scenario.name }} · {{ scenario.eventCount }} event(s)
+                </option>
+              }
+            </select>
+            @if (baselineChosen()) {
+              <div class="form-text">
+                How this configuration performs when nothing goes wrong. TTR, LOSS_AREA,
+                DISRUPTION_COST_DELTA and RESILIENCE_INDEX are undefined for such a run and will be
+                absent - not zero. Replications and seed come from the fields below, or the engine
+                defaults.
+              </div>
+            }
+            @if (scenarioIsEmpty() && scenarioId() !== null) {
+              <div class="form-text text-warning-emphasis">
+                This scenario has no events. The run will complete and measure nothing - every
+                recovery metric is defined against a disruption that never happens. To measure the
+                undisrupted network, use the <em>Baseline</em> option instead.
+              </div>
+            }
+          </div>
+
+          <h2 class="h6 mt-4 mb-3">
+            Parameters
+            <span class="text-body-secondary fw-normal small">
+              - leave blank to use the scenario's own settings
+            </span>
+          </h2>
+
+          <div class="row g-3">
+            <div class="col-sm-6">
+              <label class="form-label" for="replications">Replications</label>
+              <input
+                id="replications"
+                type="number"
+                min="1"
+                class="form-control"
+                [ngModel]="replications()"
+                (ngModelChange)="replications.set($event)"
+                [placeholder]="replicationsPlaceholder()"
+                [disabled]="store.running()"
+              />
+              <div class="form-text">
+                @if (baselineChosen()) {
+                  The job executes <strong>{{ totalReplications() }}</strong> - exactly this many. A
+                  baseline run has no disruption to pair against, so the paired set is
+                  skipped rather than computed twice (FR-17).
+                } @else {
+                  The job executes <strong>{{ totalReplications() }}</strong> - twice this, because
+                  every run includes the paired undisrupted baseline set that TTR, LOSS_AREA and the
+                  resilience index are defined against.
+                }
+              </div>
+            </div>
+
+            <div class="col-sm-6">
+              <label class="form-label" for="seed">Seed</label>
+              <input
+                id="seed"
+                type="number"
+                class="form-control"
+                [ngModel]="seed()"
+                (ngModelChange)="seed.set($event)"
+                [placeholder]="seedPlaceholder()"
+                [disabled]="store.running()"
+              />
+              <div class="form-text">
+                Whatever is used is stored on the run, so it can be reproduced exactly.
+              </div>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            class="btn btn-sm btn-link px-0 mt-3"
+            (click)="showAdvanced.set(!showAdvanced())"
+          >
+            {{ showAdvanced() ? 'Hide' : 'Show' }} stochastic settings
+          </button>
+
+          @if (showAdvanced()) {
+            <div class="row g-3 mt-0">
+              <div class="col-sm-6">
+                <label class="form-label" for="noise">Demand noise (CV)</label>
+                <input
+                  id="noise"
+                  type="number"
+                  min="0"
+                  step="0.05"
+                  class="form-control"
+                  [ngModel]="demandNoiseCv()"
+                  (ngModelChange)="demandNoiseCv.set($event)"
+                  placeholder="0"
+                  [disabled]="store.running()"
+                />
+                <div class="form-text">
+                  0 by default, which makes demand exactly deterministic - the only setting under
+                  which a run can be checked by hand.
+                </div>
+              </div>
+
+              <div class="col-sm-6">
+                <label class="form-label" for="jitter">Timing jitter (periods)</label>
+                <input
+                  id="jitter"
+                  type="number"
+                  min="0"
+                  class="form-control"
+                  [ngModel]="timingJitterPeriods()"
+                  (ngModelChange)="timingJitterPeriods.set($event)"
+                  placeholder="0"
+                  [disabled]="store.running()"
+                />
+                <div class="form-text">
+                  Each event's start and duration are perturbed uniformly from [−j, +j].
+                </div>
+              </div>
+
+              <div class="col-12">
+                <div class="form-check">
+                  <input
+                    id="failures"
+                    type="checkbox"
+                    class="form-check-input"
+                    [ngModel]="includeRandomFailures()"
+                    (ngModelChange)="includeRandomFailures.set($event)"
+                    [disabled]="store.running()"
+                  />
+                  <label class="form-check-label" for="failures">
+                    Apply each element's own <code>failureProb</code>
+                    <span class="text-body-secondary">
+                      - a network's unreliability is part of the network.
+                    </span>
+                  </label>
+                </div>
+                <div class="form-check">
+                  <input
+                    id="baseline-clean"
+                    type="checkbox"
+                    class="form-check-input"
+                    [ngModel]="baselineSuppressesFailures()"
+                    (ngModelChange)="baselineSuppressesFailures.set($event)"
+                    [disabled]="store.running()"
+                  />
+                  <label class="form-check-label" for="baseline-clean">
+                    Compare against a perfectly reliable baseline
+                    <span class="text-body-secondary">
+                      - off by default, so random outages appear in both sets and the disruption cost
+                      isolates the scenario rather than charging it the network's own unreliability.
+                    </span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          }
+
+          <div class="d-flex gap-2 mt-4">
+            <button
+              type="button"
+              class="btn btn-primary"
+              [disabled]="!canSubmit()"
+              (click)="submit()"
+            >
+              {{ store.submitting() ? 'Submitting…' : 'Run simulation' }}
+            </button>
+            @if (store.accepted() && !store.running()) {
+              <button type="button" class="btn btn-outline-secondary" (click)="reset()">
+                New run
+              </button>
+            }
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- --------------------------------------------------------------- the monitor -->
+    <div class="col-lg-5">
+      @if (store.accepted(); as accepted) {
+        <div class="card">
+          <div class="card-body">
+            <h2 class="h6 mb-3">
+              Run #{{ accepted.runId }}
+              <span class="id-chip ms-1">job {{ accepted.jobId }}</span>
+            </h2>
+
+            <div class="progress mb-2" role="progressbar" [attr.aria-valuenow]="store.progressPercent()">
+              <div
+                class="progress-bar"
+                [class.bg-danger]="jobFailed()"
+                [class.bg-secondary]="jobCancelled()"
+                [class.progress-bar-striped]="store.running()"
+                [class.progress-bar-animated]="store.running()"
+                [style.width.%]="store.progressPercent()"
+              ></div>
+            </div>
+
+            <p class="small mb-3">
+              <span class="badge text-bg-light">{{ jobStatus() }}</span>
+              <span class="ms-2">{{ store.progressPercent() }}%</span>
+              @if (store.job()?.message; as message) {
+                <span class="text-body-secondary ms-2">{{ message }}</span>
+              }
+            </p>
+
+            @if (store.job()?.error; as failure) {
+              <div class="alert alert-danger small" role="alert">{{ failure }}</div>
+            }
+
+            @if (jobCancelled()) {
+              <p class="small text-body-secondary">
+                Stopped. A cancelled run holds nothing frozen, so its network is editable again.
+              </p>
+            }
+
+            <dl class="row small mb-3">
+              <dt class="col-6">Replications</dt>
+              <dd class="col-6">{{ accepted.replications }} (incl. baseline)</dd>
+              <dt class="col-6">Seed</dt>
+              <dd class="col-6"><span class="id-chip">{{ accepted.params.seed }}</span></dd>
+              <dt class="col-6">Horizon</dt>
+              <dd class="col-6">{{ accepted.params.horizonPeriods }} periods</dd>
+              <dt class="col-6">Engine</dt>
+              <dd class="col-6">{{ accepted.params.engineVersion }}</dd>
+            </dl>
+
+            <div class="d-flex gap-2">
+              @if (store.running()) {
+                <button
+                  type="button"
+                  class="btn btn-sm btn-outline-danger"
+                  [disabled]="store.cancelling()"
+                  (click)="cancel()"
+                >
+                  {{ store.cancelling() ? 'Stopping…' : 'Cancel run' }}
+                </button>
+                <span class="small text-body-secondary align-self-center">
+                  Stops at the next safe point - between replications - so no half-written result can
+                  look complete.
+                </span>
+              }
+              <a class="btn btn-sm btn-outline-primary" [routerLink]="runLink(accepted.runId)">
+                Open results
+              </a>
+            </div>
+          </div>
+        </div>
+      } @else {
+        <div class="card bg-body-tertiary border-0">
+          <div class="card-body small text-body-secondary">
+            <p class="mb-2"><strong>What happens on submit</strong></p>
+            <p class="mb-2">
+              The request is validated in full before it is accepted - the scenario's events have to
+              fit this network's horizon and name things this network actually has - so a problem
+              comes back as a sentence now rather than as a failed job in ten seconds.
+            </p>
+            <p class="mb-0">
+              Then the run is queued, the network freezes, and this panel follows the job until it
+              finishes.
+            </p>
+          </div>
+        </div>
+      }
+    </div>
+  </div>
+</div>

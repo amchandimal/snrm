@@ -1,0 +1,61 @@
+/* The shared period cursor (FR-22). */
+
+:host {
+  display: block;
+}
+
+.cursor {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.cursor__button {
+  border: 1px solid #ced4da;
+  background: #fff;
+  border-radius: 0.375rem;
+  padding: 0.125rem 0.5rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: #212529;
+}
+
+.cursor__button:hover:not(:disabled) {
+  background: #f8f9fa;
+}
+
+.cursor__button:disabled {
+  opacity: 0.45;
+}
+
+/*
+  The slider takes the row's slack: it is the control a reader actually drags, and a cursor that has
+  to be nudged pixel by pixel across a 52-period horizon is a cursor nobody scrubs.
+*/
+.cursor__scrub {
+  flex: 1 1 14rem;
+  min-width: 8rem;
+}
+
+.cursor__readout {
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+  color: #212529;
+  white-space: nowrap;
+}
+
+.cursor__reset {
+  padding: 0;
+  font-size: 0.75rem;
+}
+
+.cursor__hint {
+  margin: 0.5rem 0 0;
+  font-size: 0.75rem;
+  color: #6c757d;
+}
+
+.cursor__hint kbd {
+  font-size: 0.6875rem;
+}

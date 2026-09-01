@@ -1,0 +1,40 @@
+<!-- A value with its 95% CI across replications. -->
+<span class="ci-value">
+  <span class="ci-value__mean">{{ formatted() }}</span>
+
+  @if (hasInterval()) {
+    <span
+      class="ci-value__range"
+      [title]="'95% confidence interval across replications: ' + formattedLow() + ' to ' + formattedHigh()"
+    >
+      [{{ formattedLow() }} – {{ formattedHigh() }}]
+    </span>
+  } @else {
+    <!--
+      No interval, and the reason matters: a topological metric is exact, and CVAR_COST is a
+      functional of the whole replication set rather than a mean of per-replication values.
+      Said out loud rather than left as a silent absence, which reads as missing data.
+    -->
+    <span class="ci-value__exact" title="Exact - this metric carries no confidence interval">
+      exact
+    </span>
+  }
+</span>
+
+<!--
+  Nested rather than `whisker() && bar(); as geometry`: under strictTemplates an `as` alias takes the
+  whole expression's type, so the `&&` form would type `geometry` as `false | Geometry | null`.
+-->
+@if (whisker()) {
+  @if (bar(); as geometry) {
+    <span class="ci-whisker" aria-hidden="true">
+      <span class="ci-whisker__track"></span>
+      <span
+        class="ci-whisker__interval"
+        [style.left.%]="geometry.left"
+        [style.width.%]="geometry.width"
+      ></span>
+      <span class="ci-whisker__mean" [style.left.%]="geometry.mean"></span>
+    </span>
+  }
+}

@@ -1,0 +1,31 @@
+# ---------------------------------------------------------------------------
+# This repository holds exactly two things: the frontend and the backend.
+# Everything else at the root is ignored, so a working directory that also
+# carries drafts, datasets or scratch files cannot leak them into a commit.
+# ---------------------------------------------------------------------------
+/*
+!/.gitignore
+!/README.md
+!/LICENSE
+!/snrm-frontend/
+!/snrm-backend/
+
+# Each project carries its own .gitignore for build output and local secrets;
+# the entries below apply everywhere and are not repeated there.
+
+# Editor and assistant scratch
+CLAUDE.md
+.claude/
+.cursor/
+.aider*
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini

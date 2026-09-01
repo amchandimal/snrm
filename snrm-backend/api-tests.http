@@ -1,0 +1,3360 @@
+###############################################################################
+# SNRM — REST API smoke tests
+#
+# Format: VS Code "REST Client" (humao.rest-client). Click "Send Request" above
+# each block, top to bottom — later requests reuse ids returned by earlier ones.
+#
+# INTELLIJ USERS: IntelliJ's HTTP Client cannot read another request's response
+# with the {{name.response.body.$.field}} syntax used below. Replace each file
+# variable with a response handler on the request that produced it, e.g. after
+# the login request add:
+#
+#     > {% client.global.set("token", response.body.token); %}
+#
+# and delete the "@token = ..." line. The requests themselves need no changes.
+#
+# BEFORE YOU START
+#   1. MySQL 8 running on localhost:3306 with the schema from db/bootstrap.sql,
+#      and SNRM_DB_USER / SNRM_DB_PASSWORD set.
+#   2. mvnw.cmd spring-boot:run
+#   3. Set @password below. If SNRM_AUTH_PASSWORD_HASH is not configured, the
+#      application prints a generated password to the log at startup — look for
+#      "using a generated password for the research user". For a stable one:
+#        mvnw.cmd test -Dtest=BcryptHashToolTest -Dsnrm.password=your-password -DfailIfNoTests=false
+#
+# UNITS ON THE WIRE (FR-13)
+#   Every duration and every rate is a {value, unit} object. The two differ by
+#   one field name, and it is not an accident — it follows the database
+#   column names:
+#
+#     duration  {"value": 36,  "unit":     "HOUR"}   lead time, processing time
+#     rate      {"value": 120, "timeUnit": "WEEK"}   capacity, demand, holding cost
+#
+#   spring.jackson.deserialization.fail-on-unknown-properties=true, so sending
+#   "unit" inside a rate is a 400, not a silently ignored field. Request 33
+#   proves it.
+#
+#   Omitting the whole object is allowed and means the field's empty form —
+#   unconstrained for a capacity, zero for a duration, a demand or a holding
+#   cost — stated in the network's period unit.
+#
+# EVENT TIMING IS UNIT-BEARING TOO
+#   A disruption event's startOffset and duration are durations, not period
+#   indexes: {"startOffset": {"value": 10, "unit": "DAY"}}, measured from the
+#   start of the horizon. A scenario is project-scoped so it can be replayed
+#   against every configuration variant, and those variants need not
+#   share a period length — "period 4" would be a different moment in each.
+#   Requests 25a onward exercise this.
+#
+# Requests 1-28 are the happy path and must be run in order, including the
+# scenario block 25a-25p. Requests 25q-25ab and 29-42 are deliberate failures
+# and depend on the happy path having run. Requests 44-56 cover the CSV/XLSX/XML
+# import and export and need only a project, so they can be
+# run straight after request 2. Two requests are documented but cannot be run
+# yet: 37, which needs a simulation run to freeze a network, and 25u, which
+# needs a node id from request 27 pasted in by hand.
+###############################################################################
+
+@host = http://localhost:8080
+@baseUrl = {{host}}/api/v1
+@username = researcher
+@password = CHANGE_ME
+
+
+### 0. Health — the only endpoint that needs no token. Expect 200 {"status":"UP"}.
+GET {{host}}/actuator/health
+
+
+###############################################################################
+# HAPPY PATH
+#
+# Builds the four-node network of docs/time-units-worked-example.md: lead times
+# of 6 h, 36 h and 2 weeks and dwell times of 12 h and 4 h, all on a 1-day
+# period. That document works the conversion arithmetic through by hand and
+# states the exact findings requests 20-24 must return.
+###############################################################################
+
+### 1. Log in. Expect 200 with a JWT.
+# @name login
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "username": "{{username}}",
+  "password": "{{password}}"
+}
+
+
+### ---------------------------------------------------------------------------
+@token = {{login.response.body.$.token}}
+
+
+### 2. Create a project. Expect 201 + Location: /api/v1/projects/{id}.
+# The name carries a timestamp so the file can be re-run without hitting
+# DUPLICATE_NAME on uq_project.
+# @name createProject
+POST {{baseUrl}}/projects
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "Automotive tier-1 case {{$timestamp}}"
+}
+
+
+### ---------------------------------------------------------------------------
+@projectId = {{createProject.response.body.$.id}}
+
+
+### 3. Create the baseline network. Expect 201, version 1, editable true, and
+# the default clock of V3__time_units.sql: periodLength 1 DAY, horizonPeriods
+# 52, roundingPolicy NEAREST.
+# @name createNetwork
+POST {{baseUrl}}/projects/{{projectId}}/networks
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "Baseline",
+  "baseline": true
+}
+
+
+### ---------------------------------------------------------------------------
+@networkId = {{createNetwork.response.body.$.id}}
+
+
+### 4. Set the time base explicitly. Expect 200 with
+# {"network": {...}, "validation": {...}} — the validation half is empty for now
+# because the network has no durations yet, and suggestedPeriod is absent for
+# the same reason: nothing constrains the choice.
+PUT {{baseUrl}}/networks/{{networkId}}/time-base
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "periodLength": { "value": 1, "unit": "DAY" },
+  "horizonPeriods": 52,
+  "roundingPolicy": "NEAREST"
+}
+
+
+### 5. Add node 1 of 4 — a supplier. posX/posY are the canvas drop point
+# Capacity is a rate: 500 a day. processingTime is omitted, so it
+# takes its empty form — zero, in the network's period unit.
+# @name createSupplier
+POST {{baseUrl}}/networks/{{networkId}}/nodes
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "SUP-1",
+  "type": "SUPPLIER",
+  "capacity": { "value": 500, "timeUnit": "DAY" },
+  "fixedCost": 1000,
+  "varCost": 2.5,
+  "failureProb": 0.02,
+  "region": "EU-West",
+  "lat": 48.8566,
+  "lng": 2.3522,
+  "posX": 100,
+  "posY": 100
+}
+
+
+### ---------------------------------------------------------------------------
+@supplierId = {{createSupplier.response.body.$.id}}
+
+
+### 6. Add node 2 of 4 — a plant. Capacity stated over a week rather than the
+# period: 400 a week is 57.142857 a period, and the response still says 400 per
+# WEEK because the API never restates what the user entered.
+# The 12-hour changeover is half a period and will round to a whole one.
+# @name createPlant
+POST {{baseUrl}}/networks/{{networkId}}/nodes
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "PLANT-1",
+  "type": "PLANT",
+  "capacity": { "value": 400, "timeUnit": "WEEK" },
+  "processingTime": { "value": 12, "unit": "HOUR" },
+  "fixedCost": 5000,
+  "varCost": 8,
+  "failureProb": 0.03,
+  "region": "EU-West",
+  "posX": 300,
+  "posY": 100
+}
+
+
+### ---------------------------------------------------------------------------
+@plantId = {{createPlant.response.body.$.id}}
+
+
+### 7. Add node 3 of 4 — a distribution centre. Its 4-hour dwell is a sixth of
+# a period and will disappear entirely under NEAREST.
+# @name createDc
+POST {{baseUrl}}/networks/{{networkId}}/nodes
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "DC-1",
+  "type": "DC",
+  "capacity": { "value": 250, "timeUnit": "DAY" },
+  "processingTime": { "value": 4, "unit": "HOUR" },
+  "fixedCost": 2000,
+  "varCost": 1.2,
+  "failureProb": 0.01,
+  "region": "EU-North",
+  "posX": 500,
+  "posY": 100
+}
+
+
+### ---------------------------------------------------------------------------
+@dcId = {{createDc.response.body.$.id}}
+
+
+### 8. Add node 4 of 4 — a customer. Only required fields; the rest take the
+# column defaults. capacity is omitted, so it stays unconstrained — and null
+# fields are dropped from responses (spring.jackson.default-property-inclusion=
+# non_null), so expect a "capacity" object carrying only its timeUnit.
+# @name createCustomer
+POST {{baseUrl}}/networks/{{networkId}}/nodes
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "CUST-1",
+  "type": "CUSTOMER",
+  "region": "EU-North",
+  "posX": 700,
+  "posY": 100
+}
+
+
+### ---------------------------------------------------------------------------
+@customerId = {{createCustomer.response.body.$.id}}
+
+
+### 9. Add link 1 of 3 — SUP-1 to PLANT-1, a 6-hour truck leg. Expect 201 and
+# the lead time echoed back as 6 HOUR, not as a period count.
+# @name createLink1
+POST {{baseUrl}}/networks/{{networkId}}/links
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "sourceNodeId": {{supplierId}},
+  "targetNodeId": {{plantId}},
+  "leadTime": { "value": 6, "unit": "HOUR" },
+  "capacity": { "value": 300, "timeUnit": "DAY" },
+  "unitCost": 1.5,
+  "failureProb": 0.01
+}
+
+
+### ---------------------------------------------------------------------------
+@link1Id = {{createLink1.response.body.$.id}}
+
+
+### 10. Add link 2 of 3 — PLANT-1 to DC-1, a day and a half.
+# @name createLink2
+POST {{baseUrl}}/networks/{{networkId}}/links
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "sourceNodeId": {{plantId}},
+  "targetNodeId": {{dcId}},
+  "leadTime": { "value": 36, "unit": "HOUR" },
+  "capacity": { "value": 250, "timeUnit": "DAY" },
+  "unitCost": 0.9
+}
+
+
+### ---------------------------------------------------------------------------
+@link2Id = {{createLink2.response.body.$.id}}
+
+
+### 11. Add link 3 of 3 — DC-1 to CUST-1, an ocean leg of two weeks. This is
+# the one duration in the network that divides evenly into a 1-day period.
+# @name createLink3
+POST {{baseUrl}}/networks/{{networkId}}/links
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "sourceNodeId": {{dcId}},
+  "targetNodeId": {{customerId}},
+  "leadTime": { "value": 2, "unit": "WEEK" },
+  "unitCost": 3.2,
+  "failureProb": 0.02
+}
+
+
+### ---------------------------------------------------------------------------
+@link3Id = {{createLink3.response.body.$.id}}
+
+
+### 12. Bulk-patch node positions — one drag of a four-node selection.
+# Expect 200 {"updated": 4, "nodes": [...]} with the new coordinates.
+PATCH {{baseUrl}}/networks/{{networkId}}/nodes/positions
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "positions": [
+    { "nodeId": {{supplierId}}, "posX": 120, "posY": 240 },
+    { "nodeId": {{plantId}},    "posX": 320, "posY": 240 },
+    { "nodeId": {{dcId}},       "posX": 520, "posY": 240 },
+    { "nodeId": {{customerId}}, "posX": 720, "posY": 240 }
+  ]
+}
+
+
+### 13. Bulk-patch node attributes — the property panel flushing.
+# Omitted fields are left alone: SUP-1 keeps its region, costs and coordinates,
+# and CUST-1's capacity stays unconstrained. A rate is patched whole — there is
+# no way to change a unit without restating the value it applies to.
+PATCH {{baseUrl}}/networks/{{networkId}}/nodes
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "nodes": [
+    { "nodeId": {{supplierId}}, "capacity": { "value": 750, "timeUnit": "DAY" }, "failureProb": 0.05 },
+    { "nodeId": {{customerId}}, "name": "CUST-1 (Nordics)" }
+  ]
+}
+
+
+### 14. Bulk-patch link attributes. Note what request 20 then reports: raising
+# link 1 from 6 to 8 hours does not save it — a third of a period still rounds
+# to zero.
+PATCH {{baseUrl}}/networks/{{networkId}}/links
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "links": [
+    { "linkId": {{link1Id}}, "leadTime": { "value": 8, "unit": "HOUR" } },
+    { "linkId": {{link2Id}}, "unitCost": 1.1, "failureProb": 0.02 }
+  ]
+}
+
+
+### 15. Put link 1 back to the 6 hours the worked example uses, with a PUT this
+# time — a full replacement, so the omitted capacity is cleared back to
+# unconstrained.
+PUT {{baseUrl}}/links/{{link1Id}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "leadTime": { "value": 6, "unit": "HOUR" },
+  "unitCost": 1.5,
+  "failureProb": 0.01
+}
+
+
+### 16. Add a product to the project (project-scoped).
+# @name createProduct
+POST {{baseUrl}}/projects/{{projectId}}/products
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "Gearbox",
+  "unitValue": 250
+}
+
+
+### ---------------------------------------------------------------------------
+@productId = {{createProduct.response.body.$.id}}
+
+
+### 17. Give the customer demand for that product (upsert on the natural key).
+# 120 a week on a 1-day period is 17.142857 a period to the engine, and 120 per
+# WEEK for ever after to the API. initialInventory and safetyStock carry no
+# unit: a stock level is a quantity at an instant, not a flow.
+PUT {{baseUrl}}/nodes/{{customerId}}/products/{{productId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "demand": { "value": 120, "timeUnit": "WEEK" },
+  "initialInventory": 0,
+  "safetyStock": 0,
+  "holdingCost": { "value": 0.4, "timeUnit": "DAY" }
+}
+
+
+### 18. Give the DC some opening stock, to show a node-product row with no
+# demand. Both rates are omitted, so both become zero over the network's period
+# unit — DAY.
+PUT {{baseUrl}}/nodes/{{dcId}}/products/{{productId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "initialInventory": 400,
+  "safetyStock": 120
+}
+
+
+### 19. Read the network back. Expect the clock alongside the usual fields:
+# periodLength {value 1, unit DAY}, horizonPeriods 52, roundingPolicy NEAREST.
+GET {{baseUrl}}/networks/{{networkId}}
+Authorization: Bearer {{token}}
+
+
+###############################################################################
+# TIME RESOLUTION — one request per resolution check
+###############################################################################
+
+### 20. The editor's view of the current clock. Expect 200,
+# errorCount 0, warningCount 4, suggestedPeriod {value 2, unit HOUR}, and these
+# four findings in this order — worst first, then node before link, then by id:
+#
+#   NODE PLANT-1  processingTime  DURATION_ROUNDING_ERROR   12 h  -> 1 period   +100%
+#   NODE DC-1     processingTime  DURATION_ROUNDS_TO_ZERO    4 h  -> 0 periods  -100%
+#   LINK SUP-1 -> PLANT-1  leadTime  DURATION_ROUNDS_TO_ZERO 6 h  -> 0 periods  -100%
+#   LINK PLANT-1 -> DC-1   leadTime  DURATION_ROUNDING_ERROR 36 h -> 2 periods   +33%
+#
+# The 2-week leg produces nothing: 14 days is 14 periods exactly.
+# docs/time-units-worked-example.md works all of this through by hand.
+GET {{baseUrl}}/networks/{{networkId}}/time-validation
+Authorization: Bearer {{token}}
+
+
+### 21. The same network as the import wizard sees it. Only
+# the severities change: the two DURATION_ROUNDS_TO_ZERO findings become errors,
+# so errorCount 2, warningCount 2, and they sort to the top.
+GET {{baseUrl}}/networks/{{networkId}}/time-validation?context=IMPORT
+Authorization: Bearer {{token}}
+
+
+### 22. Accept the suggestion: 2 hours is the coarsest period that keeps every
+# duration in this network exact. Expect 200 and an empty findings array —
+# 6 h = 3 periods, 36 h = 18, 2 weeks = 168, 12 h = 6, 4 h = 2. The horizon is
+# raised to keep the run covering the same span of real time; changing the
+# period alone would have silently shortened it from 52 days to 4 days and 8
+# hours.
+PUT {{baseUrl}}/networks/{{networkId}}/time-base
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "periodLength": { "value": 2, "unit": "HOUR" },
+  "horizonPeriods": 624,
+  "roundingPolicy": "NEAREST"
+}
+
+
+### 23. PERIOD_TOO_FINE — the period is more than 1000x finer than the
+# longest declared duration. At a 1-minute period the 2-week leg needs 20,160
+# steps, and each of the 100 default replications pays for all of them.
+# Expect exactly one finding: PERIOD_TOO_FINE, WARNING, on link 3. Every other
+# duration still converts exactly, so nothing else is reported.
+PUT {{baseUrl}}/networks/{{networkId}}/time-base
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "periodLength": { "value": 1, "unit": "MINUTE" },
+  "horizonPeriods": 74880,
+  "roundingPolicy": "NEAREST"
+}
+
+
+### 24. Back to the 1-day period the worked example uses, so the rest of the
+# file runs against the documented network.
+PUT {{baseUrl}}/networks/{{networkId}}/time-base
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "periodLength": { "value": 1, "unit": "DAY" },
+  "horizonPeriods": 52,
+  "roundingPolicy": "NEAREST"
+}
+
+
+### 25. EVENT_EXCEEDS_HORIZON — now runnable.
+#
+# It needs a scenario with an event, and the scenario endpoints exist
+# as of requests 25a onward. Sent now, with no scenario named, this returns the
+# same four findings as request 20: without a scenarioId there are no event
+# windows to check, and that is the point of the parameter. Scenarios are
+# project-scoped so they can be replayed against every variant —
+# whether an event outruns the horizon is a question about the *pair*, so the
+# request has to name both.
+#
+# Requests 25ac–25ae build the case that actually produces the finding.
+GET {{baseUrl}}/networks/{{networkId}}/time-validation
+Authorization: Bearer {{token}}
+
+
+###############################################################################
+# DISRUPTION SCENARIOS (FR-05)
+#
+# Two levels, and the split is the whole design. A SCENARIO belongs to the
+# PROJECT — one disruption story replayed against every configuration variant,
+# which is what makes their results comparable. An EVENT belongs to the scenario
+# but is authored against a NETWORK: its target is a node id, a link id or a
+# region tag, and its window has to fit inside a horizon. Neither can be checked
+# without naming a network, so every event write carries ?networkId= — and the
+# server does not store it.
+#
+# TIMING IS UNIT-BEARING (FR-13). startOffset and duration are real
+# durations measured from the start of the horizon:
+#
+#   {"startOffset": {"value": 10, "unit": "DAY"},
+#    "duration":    {"value": 2,  "unit": "WEEK"}}
+#
+# NOT a start period and a period count. "Period 4" would be a different moment
+# in a variant stepping in hours than in one stepping in weeks, and the
+# comparison the scenario exists to support would be measuring the units. The
+# timeline positions its bars by the converted value and labels them
+# with the declared one.
+#
+# On the 1-day / 52-period clock restored by request 24, the events below land
+# at: 25c periods 10-24, 25d periods 2-5, 25g periods 20-30.
+###############################################################################
+
+### 25a. Create a disruption scenario. Expect 201, Location naming it,
+# numReplications 100, seed echoed, eventCount 0 and an
+# empty events array.
+# @name createScenario
+POST {{baseUrl}}/projects/{{projectId}}/scenarios
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "Tier-1 plant fire",
+  "numReplications": 200,
+  "seed": 424242
+}
+
+
+### ---------------------------------------------------------------------------
+@scenarioId = {{createScenario.response.body.$.id}}
+
+
+### 25b. List the project's scenarios. Expect 200 with one row carrying
+# eventCount 0 and NO events array — the sidebar wants a row per
+# scenario, not every bar of every timeline.
+GET {{baseUrl}}/projects/{{projectId}}/scenarios
+Authorization: Bearer {{token}}
+
+
+### 25c. Add event 1 of 3 — the plant burns. A NODE target, authored against the
+# baseline network. Expect 201 with the timing echoed back as 10 DAY and 2 WEEK,
+# never as periods: on this network that is periods 10 to 24 of 52, but the
+# stored event says what the researcher typed.
+# severity 0.75 leaves a quarter of the plant's capacity; LINEAR ramps it back
+# across the window; probability 0.4 means it occurs in 40% of replications, so
+# the scenario is a distribution of futures rather than one.
+# @name createNodeEvent
+POST {{baseUrl}}/scenarios/{{scenarioId}}/events?networkId={{networkId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "targetType": "NODE",
+  "targetId": {{plantId}},
+  "startOffset": { "value": 10, "unit": "DAY" },
+  "duration": { "value": 2, "unit": "WEEK" },
+  "severity": 0.75,
+  "recoveryProfile": "LINEAR",
+  "probability": 0.4
+}
+
+
+### ---------------------------------------------------------------------------
+@nodeEventId = {{createNodeEvent.response.body.$.id}}
+
+
+### 25d. Add event 2 of 3 — the SUP-1 → PLANT-1 truck leg is cut, stated in
+# hours. Expect 201. 36 HOUR is periods 2 (36/24 = 1.5, NEAREST) and 3 DAY is 3,
+# so the bar runs 2 to 5 — mixed units in one scenario, which is exactly why the
+# events are ordered by the derived second count and not by the stated value.
+# recoveryProfile and probability are omitted: STEP and 1.0, a certain event
+# whose capacity snaps back at the end of the window.
+# @name createLinkEvent
+POST {{baseUrl}}/scenarios/{{scenarioId}}/events?networkId={{networkId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "targetType": "LINK",
+  "targetId": {{link1Id}},
+  "startOffset": { "value": 36, "unit": "HOUR" },
+  "duration": { "value": 3, "unit": "DAY" },
+  "severity": 1.0
+}
+
+
+### ---------------------------------------------------------------------------
+@linkEventId = {{createLinkEvent.response.body.$.id}}
+
+
+### 25e. The region catalogue of this network. Expect 200 and two
+# rows — EU-North with 2 nodes (DC-1, CUST-1) and EU-West with 2 (SUP-1,
+# PLANT-1), alphabetically. Derived from node.region rather than stored, so
+# retagging the last node of a region removes it from this list.
+GET {{baseUrl}}/networks/{{networkId}}/regions
+Authorization: Bearer {{token}}
+
+
+### 25f. Resolve one tag to its node set — the preview the scenario builder
+# shows before a REGION event is saved. Expect 200 with nodeCount 2 and the two
+# EU-West nodes in id order. This runs the resolution itself, so what the
+# builder previews and what a run will expand the event into cannot differ.
+GET {{baseUrl}}/networks/{{networkId}}/region-nodes?region=EU-West
+Authorization: Bearer {{token}}
+
+
+### 25g. Add event 3 of 3 — a regional power failure. No targetId at all: a
+# REGION event is addressed by targetRegion, and carrying both halves is
+# refused (25p). Expect 201, targetId absent from the response, periods 20 to 30
+# on this clock.
+# @name createRegionEvent
+POST {{baseUrl}}/scenarios/{{scenarioId}}/events?networkId={{networkId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "targetType": "REGION",
+  "targetRegion": "EU-West",
+  "startOffset": { "value": 20, "unit": "DAY" },
+  "duration": { "value": 10, "unit": "DAY" },
+  "severity": 0.5,
+  "recoveryProfile": "EXPONENTIAL",
+  "probability": 0.15
+}
+
+
+### ---------------------------------------------------------------------------
+@regionEventId = {{createRegionEvent.response.body.$.id}}
+
+
+### 25h. Read the scenario back. Expect 200, eventCount 3, and the events in
+# TIMELINE ORDER — the link event (36 h = 129,600 s) first, then the node event
+# (10 d), then the region event (20 d). Ordered by the derived second count,
+# which is the only ordering that is correct once one scenario mixes hours,
+# days and weeks.
+GET {{baseUrl}}/scenarios/{{scenarioId}}
+Authorization: Bearer {{token}}
+
+
+### 25i. The same bars, without the scenario around them — for a client that
+# already has the scenario. Expect the same three, same order.
+GET {{baseUrl}}/scenarios/{{scenarioId}}/events
+Authorization: Bearer {{token}}
+
+
+### 25j. Drag the plant-fire bar: a full replacement, which is what the timeline
+# sends because it holds the whole event. Moved to 20 DAY, shortened
+# to 5 DAY, severity raised to 0.9, and made certain. Expect 200 — 20 + 5 = 25,
+# still inside the 52-period horizon.
+PUT {{baseUrl}}/events/{{nodeEventId}}?networkId={{networkId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "targetType": "NODE",
+  "targetId": {{plantId}},
+  "startOffset": { "value": 20, "unit": "DAY" },
+  "duration": { "value": 5, "unit": "DAY" },
+  "severity": 0.9,
+  "recoveryProfile": "LINEAR",
+  "probability": 1.0
+}
+
+
+### 25k. Duplicate the scenario — a deep copy, events included. The
+# body is optional and so is Content-Type: this is the one write in the API that
+# declares no `consumes`. Expect 201, a new id, eventCount 3, and three events
+# with new ids and identical timings and units.
+# @name duplicateScenario
+POST {{baseUrl}}/scenarios/{{scenarioId}}/duplicate
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "Tier-1 plant fire — delayed onset"
+}
+
+
+### ---------------------------------------------------------------------------
+@copyScenarioId = {{duplicateScenario.response.body.$.id}}
+
+
+### 25l. Duplicate again with no body at all. Expect 201 and the derived name
+# "Tier-1 plant fire (copy)". Send this one with no Content-Type header.
+POST {{baseUrl}}/scenarios/{{scenarioId}}/duplicate
+Authorization: Bearer {{token}}
+
+
+### 25m. Rename the original and drop its fixed seed. Expect 200, seed absent
+# from the response (null members are dropped) — meaning a fresh seed is drawn
+# per run, and the one used is recorded on the run either way.
+PUT {{baseUrl}}/scenarios/{{scenarioId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "Tier-1 plant fire (revised)",
+  "numReplications": 500
+}
+
+
+### 25n. Delete one bar. Expect 204; 25o then shows two events left.
+DELETE {{baseUrl}}/events/{{regionEventId}}
+Authorization: Bearer {{token}}
+
+
+### 25o. Confirm: eventCount 2, and the copy made in 25k still has 3 — a
+# duplicate is a copy, not a view.
+GET {{baseUrl}}/scenarios/{{scenarioId}}
+Authorization: Bearer {{token}}
+
+
+### 25p. Delete the first copy. Expect 204; its events cascade.
+DELETE {{baseUrl}}/scenarios/{{copyScenarioId}}
+Authorization: Bearer {{token}}
+
+
+###############################################################################
+# SCENARIO FAILURES — the event semantics, each refused with a `code`
+#
+# Four of these are the reason the endpoint takes a networkId at all: nothing
+# about a target or a window can be judged without one.
+###############################################################################
+
+### 25q. severity 1.5. Expect 400, code VALIDATION_FAILED, fieldErrors naming
+# `severity` — it is a capacity-availability multiplier *reduction* in [0,1],
+# and 1.5 does not mean "150% offline", it means nothing.
+POST {{baseUrl}}/scenarios/{{scenarioId}}/events?networkId={{networkId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "targetType": "NODE",
+  "targetId": {{dcId}},
+  "startOffset": { "value": 1, "unit": "DAY" },
+  "duration": { "value": 1, "unit": "DAY" },
+  "severity": 1.5
+}
+
+
+### 25r. probability -0.2. Expect 400, code VALIDATION_FAILED, fieldErrors
+# naming `probability`. Same rule, other field.
+POST {{baseUrl}}/scenarios/{{scenarioId}}/events?networkId={{networkId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "targetType": "NODE",
+  "targetId": {{dcId}},
+  "startOffset": { "value": 1, "unit": "DAY" },
+  "duration": { "value": 1, "unit": "DAY" },
+  "severity": 0.5,
+  "probability": -0.2
+}
+
+
+### 25s. An unknown recovery profile. Expect 400 — the enum is exactly
+# {STEP, LINEAR, EXPONENTIAL}, each constant selecting a strategy bean
+# that returns availability(t), so "GRADUAL" names no behaviour. This
+# is Jackson refusing the value before bean validation runs, so the body is a
+# problem+json without fieldErrors.
+POST {{baseUrl}}/scenarios/{{scenarioId}}/events?networkId={{networkId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "targetType": "NODE",
+  "targetId": {{dcId}},
+  "startOffset": { "value": 1, "unit": "DAY" },
+  "duration": { "value": 1, "unit": "DAY" },
+  "severity": 0.5,
+  "recoveryProfile": "GRADUAL"
+}
+
+
+### 25t. An unknown target. Expect 422, code EVENT_TARGET_INVALID: node 999999
+# is not in this network. There is no foreign key that could have caught it —
+# target_id points at node.id or link.id depending on target_type, and no
+# constraint can express a reference whose table is chosen by another column.
+POST {{baseUrl}}/scenarios/{{scenarioId}}/events?networkId={{networkId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "targetType": "NODE",
+  "targetId": 999999,
+  "startOffset": { "value": 1, "unit": "DAY" },
+  "duration": { "value": 1, "unit": "DAY" },
+  "severity": 0.5
+}
+
+
+### 25u. A target from another network — the variant created in request 26.
+# Expect 422, EVENT_TARGET_INVALID. RUN THIS AFTER REQUEST 26/27: fill
+# @variantNodeId from request 27's response first. An id from a sibling variant
+# is the plausible mistake here, not a made-up number, and it is the reason an
+# event names the network it is authored against.
+#
+# @variantNodeId = <an id from request 27>
+#
+# POST {{baseUrl}}/scenarios/{{scenarioId}}/events?networkId={{networkId}}
+# Authorization: Bearer {{token}}
+# Content-Type: application/json
+#
+# {
+#   "targetType": "NODE",
+#   "targetId": {{variantNodeId}},
+#   "startOffset": { "value": 1, "unit": "DAY" },
+#   "duration": { "value": 1, "unit": "DAY" },
+#   "severity": 0.5
+# }
+
+
+### 25v. A region no node carries. Expect 422, EVENT_TARGET_INVALID naming the
+# tag. Refused rather than warned about: the event would be stored, the run
+# would complete, and the results would show a network shrugging off a
+# disruption it never received — a false negative in the one direction a
+# resilience study cannot afford.
+POST {{baseUrl}}/scenarios/{{scenarioId}}/events?networkId={{networkId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "targetType": "REGION",
+  "targetRegion": "APAC",
+  "startOffset": { "value": 1, "unit": "DAY" },
+  "duration": { "value": 1, "unit": "DAY" },
+  "severity": 0.5
+}
+
+
+### 25w. Both halves of the reference at once. Expect 422,
+# EVENT_TARGET_INVALID: a NODE event is addressed by targetId, and a row
+# carrying a region as well would have two answers to what it strikes — the
+# timeline groups by one and the engine resolves the other. ck_event_target
+# forbids it in the schema too; this is the readable version of that refusal.
+POST {{baseUrl}}/scenarios/{{scenarioId}}/events?networkId={{networkId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "targetType": "NODE",
+  "targetId": {{dcId}},
+  "targetRegion": "EU-North",
+  "startOffset": { "value": 1, "unit": "DAY" },
+  "duration": { "value": 1, "unit": "DAY" },
+  "severity": 0.5
+}
+
+
+### 25x. A REGION event with no region. Expect 422, EVENT_TARGET_INVALID.
+POST {{baseUrl}}/scenarios/{{scenarioId}}/events?networkId={{networkId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "targetType": "REGION",
+  "startOffset": { "value": 1, "unit": "DAY" },
+  "duration": { "value": 1, "unit": "DAY" },
+  "severity": 0.5
+}
+
+
+### 25y. An event that outruns the horizon, as a refusal. Expect 422, code
+# EVENT_EXCEEDS_HORIZON, and a body carrying startPeriod 30, windowPeriods 28,
+# endPeriod 58 and horizonPeriods 52 — because "extend the horizon" is only
+# actionable next to how far the event overruns it.
+#
+# The offset and the window are discretised SEPARATELY, as the engine will
+# discretise them: 30 DAY -> period 30, 4 WEEK -> 28 periods, 58 > 52.
+# Rounding their sum instead would report an end period no simulation uses.
+POST {{baseUrl}}/scenarios/{{scenarioId}}/events?networkId={{networkId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "targetType": "NODE",
+  "targetId": {{dcId}},
+  "startOffset": { "value": 30, "unit": "DAY" },
+  "duration": { "value": 4, "unit": "WEEK" },
+  "severity": 0.5
+}
+
+
+### 25z. A duration with no unit. Expect 400, VALIDATION_FAILED, fieldErrors
+# naming `duration.unit`. The same rule as request 32 — a value without a unit
+# is the bug the pair exists to make impossible.
+POST {{baseUrl}}/scenarios/{{scenarioId}}/events?networkId={{networkId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "targetType": "NODE",
+  "targetId": {{dcId}},
+  "startOffset": { "value": 1, "unit": "DAY" },
+  "duration": { "value": 3 },
+  "severity": 0.5
+}
+
+
+### 25aa. A zero-length event. Expect 400, code BAD_REQUEST. Zero is a
+# legitimate duration nearly everywhere else — a same-period lead time, no dwell
+# at a DC — so DurationDto stays @PositiveOrZero and this check lives in the
+# service. An event that lasts no time has no recovery window, so its recovery
+# profile parameterises nothing (ck_event_window).
+POST {{baseUrl}}/scenarios/{{scenarioId}}/events?networkId={{networkId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "targetType": "NODE",
+  "targetId": {{dcId}},
+  "startOffset": { "value": 1, "unit": "DAY" },
+  "duration": { "value": 0, "unit": "DAY" },
+  "severity": 0.5
+}
+
+
+### 25ab. A scenario name already in use in the project. Expect 409,
+# DUPLICATE_NAME (uq_scenario).
+POST {{baseUrl}}/projects/{{projectId}}/scenarios
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "Tier-1 plant fire (revised)"
+}
+
+
+###############################################################################
+# EVENT_EXCEEDS_HORIZON AS A *FINDING* — the other half of the check
+#
+# 25y proves the API refuses to store an event that outruns the horizon, which
+# raises the obvious question: how can the editor's warning banner ever report
+# one? Two ways, and both matter. The event may have been written against a
+# variant with a longer horizon — scenarios are project-scoped — or
+# the network's time base may have changed afterwards. The second is what these
+# three requests demonstrate.
+#
+# The arithmetic is shared: TimeValidationInput.EventWindow is the single
+# implementation, so the banner and the 422 cannot come to disagree about which
+# period an event ends in.
+###############################################################################
+
+### 25ac. Shrink the horizon to 12 periods. Expect 200. Nothing about the
+# scenario is checked here — PUT /time-base validates the network's own
+# durations, and it names no scenario.
+PUT {{baseUrl}}/networks/{{networkId}}/time-base
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "periodLength": { "value": 1, "unit": "DAY" },
+  "horizonPeriods": 12,
+  "roundingPolicy": "NEAREST"
+}
+
+
+### 25ad. Now ask the pair question. Expect 200, errorCount 1, warningCount 5 —
+# the four findings of request 20 plus two the scenario contributes:
+#
+#   DISRUPTION_EVENT  NODE <plant>  window      EVENT_EXCEEDS_HORIZON    ERROR
+#   DISRUPTION_EVENT  LINK <link1>  startOffset DURATION_ROUNDING_ERROR  WARNING
+#
+# The first is the plant-fire event as 25j left it: period 20, lasting 5, ending
+# at 25 — after a horizon of 12. The error sorts to the top.
+#
+# The second is a reminder that an event's own durations are checked like any
+# other: the link event starts at 36 HOUR, which is 1.5 days and rounds to 2 on
+# this clock (+33%). The link event's window, 2 + 3 = 5, still fits.
+GET {{baseUrl}}/networks/{{networkId}}/time-validation?scenarioId={{scenarioId}}
+Authorization: Bearer {{token}}
+
+
+### 25ae. Put the clock back to the 52 periods the worked example uses, so the
+# rest of the file runs against the documented network.
+PUT {{baseUrl}}/networks/{{networkId}}/time-base
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "periodLength": { "value": 1, "unit": "DAY" },
+  "horizonPeriods": 52,
+  "roundingPolicy": "NEAREST"
+}
+
+
+###############################################################################
+# VARIANTS
+###############################################################################
+
+### 26. Clone the network as a configuration variant (FR-09).
+# Expect 201: the whole structure copied — 4 nodes, 3 links, both node_product
+# rows — under a new network with version 1 of its own name, baseline false.
+# The copy inherits the clock: same period, horizon and rounding policy, since
+# two networks compared side by side must discretise identically.
+# @name cloneNetwork
+POST {{baseUrl}}/networks/{{networkId}}/clone
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "Baseline + backup supplier",
+  "leverChanges": {
+    "sourcing": { "addedBackupSupplier": "SUP-2" },
+    "redundancy": { "capacityMultiplier": 1.2 }
+  }
+}
+
+
+### ---------------------------------------------------------------------------
+@variantNetworkId = {{cloneNetwork.response.body.$.network.id}}
+
+
+### 27. Confirm the copy is a full one — expect the four nodes again, with new
+# ids and their units intact: PLANT-1 still 400 per WEEK, not 57.14 per DAY.
+GET {{baseUrl}}/networks/{{variantNetworkId}}/nodes
+Authorization: Bearer {{token}}
+
+
+### 28. The provenance tree of the baseline — expect one variant with its lever
+# diff.
+GET {{baseUrl}}/networks/{{networkId}}/variants
+Authorization: Bearer {{token}}
+
+
+###############################################################################
+# DELIBERATE FAILURES — each must be refused, with problem+json and a `code`
+###############################################################################
+
+### 29. Self-loop. Expect 422, code LINK_SELF_LOOP.
+POST {{baseUrl}}/networks/{{networkId}}/links
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "sourceNodeId": {{plantId}},
+  "targetNodeId": {{plantId}}
+}
+
+
+### 30. Duplicate link — the same ordered pair as request 9.
+# Expect 409, code LINK_DUPLICATE, carrying existingLinkId.
+POST {{baseUrl}}/networks/{{networkId}}/links
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "sourceNodeId": {{supplierId}},
+  "targetNodeId": {{plantId}}
+}
+
+
+### 31. Cross-network reference — a link in the *variant* network whose source is
+# a node of the *base* network. Expect 422, code LINK_CROSS_NETWORK.
+POST {{baseUrl}}/networks/{{variantNetworkId}}/links
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "sourceNodeId": {{supplierId}},
+  "targetNodeId": {{plantId}}
+}
+
+
+### 32. A duration with no unit. Expect 400, code VALIDATION_FAILED, with
+# fieldErrors {"leadTime.unit": "unit is required"} — the whole point of FR-13
+# is that a bare number is never guessed at.
+POST {{baseUrl}}/networks/{{networkId}}/links
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "sourceNodeId": {{plantId}},
+  "targetNodeId": {{customerId}},
+  "leadTime": { "value": 3 }
+}
+
+
+### 33. A rate spelled like a duration. Expect 400 — "unit" is not a field of a
+# rate, and fail-on-unknown-properties refuses it rather than dropping it and
+# defaulting the real timeUnit. Compare request 5.
+POST {{baseUrl}}/networks/{{networkId}}/nodes
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "SUP-2",
+  "type": "SUPPLIER",
+  "capacity": { "value": 500, "unit": "DAY" }
+}
+
+
+### 34. Negative values inside the unit objects. Expect 400, code
+# VALIDATION_FAILED, naming capacity.value and processingTime.value — the
+# nested path, not a single opaque message for the request.
+POST {{baseUrl}}/networks/{{networkId}}/nodes
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "SUP-3",
+  "type": "SUPPLIER",
+  "capacity": { "value": -500, "timeUnit": "DAY" },
+  "processingTime": { "value": -2, "unit": "HOUR" }
+}
+
+
+### 35. A period of zero. Expect 400, code BAD_REQUEST: every conversion
+# divides by the period, and ck_network_period says the same thing in
+# the schema.
+PUT {{baseUrl}}/networks/{{networkId}}/time-base
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "periodLength": { "value": 0, "unit": "DAY" },
+  "horizonPeriods": 52,
+  "roundingPolicy": "NEAREST"
+}
+
+
+### 35b. A period under one second. Expect 400, code BAD_REQUEST. The stated
+# value is positive, so it passes bean validation, but the schema makes the
+# canonical form a whole number of seconds and 0.4 s rounds to 0 — which
+# ck_network_period rejects. Caught in the service so the caller gets a message
+# naming the rule rather than a constraint violation from the driver.
+PUT {{baseUrl}}/networks/{{networkId}}/time-base
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "periodLength": { "value": 0.4, "unit": "SECOND" },
+  "horizonPeriods": 52,
+  "roundingPolicy": "NEAREST"
+}
+
+
+### 36. A horizon of zero. Expect 400, code VALIDATION_FAILED, fieldErrors
+# {"horizonPeriods": "horizonPeriods must be at least 1"}.
+PUT {{baseUrl}}/networks/{{networkId}}/time-base
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "periodLength": { "value": 1, "unit": "DAY" },
+  "horizonPeriods": 0,
+  "roundingPolicy": "NEAREST"
+}
+
+
+### 37. Changing the time base of a frozen network — see request 68c.
+#
+# This network has no simulation run against it, so the request below would
+# succeed and prove nothing. The refusal it was written for now has a home:
+# request 68c submits a run, which freezes its network from the moment the run
+# row is written, and then attempts exactly this against it. Expect
+# 409 and code NETWORK_IMMUTABLE there, carrying networkId — results are stated
+# in periods, so redefining the period turns "TTR = 3" from three days into
+# three hours without changing a stored number. The remedy is
+# request 26: clone, and set the time base on the variant.
+#
+# PUT {{baseUrl}}/networks/{{networkId}}/time-base
+# Authorization: Bearer {{token}}
+# Content-Type: application/json
+#
+# {
+#   "periodLength": { "value": 1, "unit": "HOUR" },
+#   "horizonPeriods": 1248,
+#   "roundingPolicy": "NEAREST"
+# }
+
+
+### 38. Unauthenticated — no Authorization header at all.
+# Expect 401, code UNAUTHENTICATED, WWW-Authenticate: Bearer.
+GET {{baseUrl}}/projects
+
+
+### 39. Bad token. Expect 401, code UNAUTHENTICATED.
+GET {{baseUrl}}/projects
+Authorization: Bearer not.a.real.token
+
+
+### 40. Bean validation — blank name, probability out of [0,1], bad latitude.
+# Expect 400, code VALIDATION_FAILED, with a fieldErrors member.
+POST {{baseUrl}}/networks/{{networkId}}/nodes
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "   ",
+  "type": "SUPPLIER",
+  "failureProb": 5,
+  "lat": 300
+}
+
+
+### 41. Duplicate node name within a network. Expect 409, code DUPLICATE_NAME.
+POST {{baseUrl}}/networks/{{networkId}}/nodes
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "SUP-1",
+  "type": "SUPPLIER"
+}
+
+
+### 42. Wrong password. Expect 401, code INVALID_CREDENTIALS, and no hint as to
+# which half was wrong.
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "username": "{{username}}",
+  "password": "definitely-not-the-password"
+}
+
+
+###############################################################################
+# DATA IMPORT AND EXPORT (FR-02, FR-14)
+#
+# Requests 44-56. The sample datasets and what each should report are documented
+# in samples/README.md; file paths below are relative to this file.
+#
+# NOTE ON MULTIPART: the "< ./path" line inserts the file's content. Each part
+# needs its own Content-Disposition and a blank line before the content. The
+# boundary string (SNRM) is arbitrary but must match the Content-Type header and
+# the closing --SNRM-- exactly.
+#
+# Validation failure comes back as 200 with the report, not as problem+json:
+# the report IS the answer, and RFC 7807 has nowhere to put a hundred rows. Only
+# a malformed request (no files, unknown project) is a 4xx.
+###############################################################################
+
+### 44. Preview the 6-node sample — step 1→2 of the wizard. Expect 200 with five
+# sheets, their headers, row counts, a sample of rows, and the canonical schema.
+# `timeBase.declared` is true because network_meta.csv is attached.
+POST {{baseUrl}}/networks/import/preview
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=SNRM
+
+--SNRM
+Content-Disposition: form-data; name="files"; filename="network_meta.csv"
+Content-Type: text/csv
+
+< ./samples/minimal-6-node/network_meta.csv
+--SNRM
+Content-Disposition: form-data; name="files"; filename="nodes.csv"
+Content-Type: text/csv
+
+< ./samples/minimal-6-node/nodes.csv
+--SNRM
+Content-Disposition: form-data; name="files"; filename="links.csv"
+Content-Type: text/csv
+
+< ./samples/minimal-6-node/links.csv
+--SNRM
+Content-Disposition: form-data; name="files"; filename="products.csv"
+Content-Type: text/csv
+
+< ./samples/minimal-6-node/products.csv
+--SNRM
+Content-Disposition: form-data; name="files"; filename="node_products.csv"
+Content-Type: text/csv
+
+< ./samples/minimal-6-node/node_products.csv
+--SNRM--
+
+
+### 45. Dry run of the same upload — step 3 of the wizard. Expect 200 with
+# valid=true, committed=false, errorCount=0, warningCount=0, and NO network
+# created. Note that nodes.csv and links.csv carry no *_unit column at all: the
+# values are read in the period unit from network_meta.
+POST {{baseUrl}}/networks/import
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=SNRM
+
+--SNRM
+Content-Disposition: form-data; name="projectId"
+
+{{projectId}}
+--SNRM
+Content-Disposition: form-data; name="name"
+
+Imported minimal
+--SNRM
+Content-Disposition: form-data; name="validateOnly"
+
+true
+--SNRM
+Content-Disposition: form-data; name="files"; filename="network_meta.csv"
+Content-Type: text/csv
+
+< ./samples/minimal-6-node/network_meta.csv
+--SNRM
+Content-Disposition: form-data; name="files"; filename="nodes.csv"
+Content-Type: text/csv
+
+< ./samples/minimal-6-node/nodes.csv
+--SNRM
+Content-Disposition: form-data; name="files"; filename="links.csv"
+Content-Type: text/csv
+
+< ./samples/minimal-6-node/links.csv
+--SNRM
+Content-Disposition: form-data; name="files"; filename="products.csv"
+Content-Type: text/csv
+
+< ./samples/minimal-6-node/products.csv
+--SNRM
+Content-Disposition: form-data; name="files"; filename="node_products.csv"
+Content-Type: text/csv
+
+< ./samples/minimal-6-node/node_products.csv
+--SNRM--
+
+
+### 46. Commit it — the wizard's confirm. Expect 201, a Location header naming
+# the new network, and committed=true. Note the id: request 48 exports it.
+# @name importMinimal
+POST {{baseUrl}}/networks/import
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=SNRM
+
+--SNRM
+Content-Disposition: form-data; name="projectId"
+
+{{projectId}}
+--SNRM
+Content-Disposition: form-data; name="name"
+
+Imported minimal
+--SNRM
+Content-Disposition: form-data; name="files"; filename="network_meta.csv"
+Content-Type: text/csv
+
+< ./samples/minimal-6-node/network_meta.csv
+--SNRM
+Content-Disposition: form-data; name="files"; filename="nodes.csv"
+Content-Type: text/csv
+
+< ./samples/minimal-6-node/nodes.csv
+--SNRM
+Content-Disposition: form-data; name="files"; filename="links.csv"
+Content-Type: text/csv
+
+< ./samples/minimal-6-node/links.csv
+--SNRM
+Content-Disposition: form-data; name="files"; filename="products.csv"
+Content-Type: text/csv
+
+< ./samples/minimal-6-node/products.csv
+--SNRM
+Content-Disposition: form-data; name="files"; filename="node_products.csv"
+Content-Type: text/csv
+
+< ./samples/minimal-6-node/node_products.csv
+--SNRM--
+
+@importedNetworkId = {{importMinimal.response.body.$.networkId}}
+
+### 47. The imported network. Expect 200, editable=true (no runs against it yet),
+# and the period length from network_meta — 1 DAY.
+GET {{baseUrl}}/networks/{{importedNetworkId}}
+Authorization: Bearer {{token}}
+
+
+### 48. Export it as one workbook. Expect 200, a .xlsx body and a
+# Content-Disposition naming "Imported minimal-v1.xlsx". Use "Save Response
+# Body" in the REST Client — the response is binary. Open it and every *_unit
+# column is filled in: the export writes the units, so a round trip preserves
+# them.
+GET {{baseUrl}}/networks/{{importedNetworkId}}/export?format=xlsx
+Authorization: Bearer {{token}}
+
+
+### 49. The same network as a zip of the five CSV files. Expect 200 and
+# application/zip. This is how to regenerate a samples/ directory from a network
+# built in the editor.
+GET {{baseUrl}}/networks/{{importedNetworkId}}/export?format=csv
+Authorization: Bearer {{token}}
+
+
+### 50. The deliberately broken sample — a dry run. Expect 200, valid=false,
+# committed=false, graphComplete=false, 17 errors and 11 warnings, and no
+# network created. samples/README.md lists every one and what was done to
+# provoke it. Note assumptions.csv, attached to be reported as
+# UNRECOGNISED_SHEET rather than to be read.
+POST {{baseUrl}}/networks/import
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=SNRM
+
+--SNRM
+Content-Disposition: form-data; name="projectId"
+
+{{projectId}}
+--SNRM
+Content-Disposition: form-data; name="name"
+
+Broken import
+--SNRM
+Content-Disposition: form-data; name="validateOnly"
+
+true
+--SNRM
+Content-Disposition: form-data; name="files"; filename="network_meta.csv"
+Content-Type: text/csv
+
+< ./samples/broken-6-node/network_meta.csv
+--SNRM
+Content-Disposition: form-data; name="files"; filename="nodes.csv"
+Content-Type: text/csv
+
+< ./samples/broken-6-node/nodes.csv
+--SNRM
+Content-Disposition: form-data; name="files"; filename="links.csv"
+Content-Type: text/csv
+
+< ./samples/broken-6-node/links.csv
+--SNRM
+Content-Disposition: form-data; name="files"; filename="products.csv"
+Content-Type: text/csv
+
+< ./samples/broken-6-node/products.csv
+--SNRM
+Content-Disposition: form-data; name="files"; filename="node_products.csv"
+Content-Type: text/csv
+
+< ./samples/broken-6-node/node_products.csv
+--SNRM
+Content-Disposition: form-data; name="files"; filename="assumptions.csv"
+Content-Type: text/csv
+
+< ./samples/broken-6-node/assumptions.csv
+--SNRM--
+
+
+### 51. Committing the broken sample. Expect 200 — NOT 201 — with the same
+# report, and still no network: an error anywhere refuses the whole import.
+# Confirm with GET /projects/{{projectId}}/networks that nothing was
+# created.
+POST {{baseUrl}}/networks/import
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=SNRM
+
+--SNRM
+Content-Disposition: form-data; name="projectId"
+
+{{projectId}}
+--SNRM
+Content-Disposition: form-data; name="name"
+
+Broken import
+--SNRM
+Content-Disposition: form-data; name="files"; filename="network_meta.csv"
+Content-Type: text/csv
+
+< ./samples/broken-6-node/network_meta.csv
+--SNRM
+Content-Disposition: form-data; name="files"; filename="nodes.csv"
+Content-Type: text/csv
+
+< ./samples/broken-6-node/nodes.csv
+--SNRM
+Content-Disposition: form-data; name="files"; filename="links.csv"
+Content-Type: text/csv
+
+< ./samples/broken-6-node/links.csv
+--SNRM
+Content-Disposition: form-data; name="files"; filename="products.csv"
+Content-Type: text/csv
+
+< ./samples/broken-6-node/products.csv
+--SNRM
+Content-Disposition: form-data; name="files"; filename="node_products.csv"
+Content-Type: text/csv
+
+< ./samples/broken-6-node/node_products.csv
+--SNRM--
+
+
+### 52. The mixed-units sample — hours, days and weeks in one network, on a
+# 1-hour period. Expect 201 with 0 errors and 4 warnings: one
+# DURATION_ROUNDING_ERROR (a 90-minute processing time is 1.5 periods) and three
+# LATERAL_LINK (DC-to-DC arcs). Unit tokens here are abbreviated and mixed-case
+# on purpose — h, hr, hrs, d, wk, Weeks, min, HOUR.
+POST {{baseUrl}}/networks/import
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=SNRM
+
+--SNRM
+Content-Disposition: form-data; name="projectId"
+
+{{projectId}}
+--SNRM
+Content-Disposition: form-data; name="name"
+
+Mixed units
+--SNRM
+Content-Disposition: form-data; name="files"; filename="network_meta.csv"
+Content-Type: text/csv
+
+< ./samples/mixed-units-10-node/network_meta.csv
+--SNRM
+Content-Disposition: form-data; name="files"; filename="nodes.csv"
+Content-Type: text/csv
+
+< ./samples/mixed-units-10-node/nodes.csv
+--SNRM
+Content-Disposition: form-data; name="files"; filename="links.csv"
+Content-Type: text/csv
+
+< ./samples/mixed-units-10-node/links.csv
+--SNRM
+Content-Disposition: form-data; name="files"; filename="products.csv"
+Content-Type: text/csv
+
+< ./samples/mixed-units-10-node/products.csv
+--SNRM
+Content-Disposition: form-data; name="files"; filename="node_products.csv"
+Content-Type: text/csv
+
+< ./samples/mixed-units-10-node/node_products.csv
+--SNRM--
+
+
+### 53. The same files against a ONE-DAY period — the wizard's confirmed time
+# base overriding network_meta. Expect 200, valid=false, and several
+# DURATION_ROUNDS_TO_ZERO errors: the 4-hour and 6-hour legs no longer exist on
+# a daily clock. This is the clearest demonstration of why the check exists, and
+# why it is an error at import and only a warning in the editor.
+# timeValidation.suggestedPeriod comes back as 30 MINUTE.
+POST {{baseUrl}}/networks/import
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=SNRM
+
+--SNRM
+Content-Disposition: form-data; name="projectId"
+
+{{projectId}}
+--SNRM
+Content-Disposition: form-data; name="name"
+
+Mixed units on a daily clock
+--SNRM
+Content-Disposition: form-data; name="validateOnly"
+
+true
+--SNRM
+Content-Disposition: form-data; name="periodLengthValue"
+
+1
+--SNRM
+Content-Disposition: form-data; name="periodLengthUnit"
+
+DAY
+--SNRM
+Content-Disposition: form-data; name="horizonPeriods"
+
+56
+--SNRM
+Content-Disposition: form-data; name="roundingPolicy"
+
+NEAREST
+--SNRM
+Content-Disposition: form-data; name="files"; filename="network_meta.csv"
+Content-Type: text/csv
+
+< ./samples/mixed-units-10-node/network_meta.csv
+--SNRM
+Content-Disposition: form-data; name="files"; filename="nodes.csv"
+Content-Type: text/csv
+
+< ./samples/mixed-units-10-node/nodes.csv
+--SNRM
+Content-Disposition: form-data; name="files"; filename="links.csv"
+Content-Type: text/csv
+
+< ./samples/mixed-units-10-node/links.csv
+--SNRM
+Content-Disposition: form-data; name="files"; filename="products.csv"
+Content-Type: text/csv
+
+< ./samples/mixed-units-10-node/products.csv
+--SNRM
+Content-Disposition: form-data; name="files"; filename="node_products.csv"
+Content-Type: text/csv
+
+< ./samples/mixed-units-10-node/node_products.csv
+--SNRM--
+
+
+### 54. The 50-node multi-echelon network. Expect 201, 0 errors and 8
+# LATERAL_LINK warnings — one per central-DC-to-regional-DC arc. Both tiers are
+# DC nodes, so those links are lateral by the echelon order, and the importer
+# raises exactly that flag.
+POST {{baseUrl}}/networks/import
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=SNRM
+
+--SNRM
+Content-Disposition: form-data; name="projectId"
+
+{{projectId}}
+--SNRM
+Content-Disposition: form-data; name="name"
+
+Multi-echelon 50
+--SNRM
+Content-Disposition: form-data; name="files"; filename="network_meta.csv"
+Content-Type: text/csv
+
+< ./samples/multi-echelon-50-node/network_meta.csv
+--SNRM
+Content-Disposition: form-data; name="files"; filename="nodes.csv"
+Content-Type: text/csv
+
+< ./samples/multi-echelon-50-node/nodes.csv
+--SNRM
+Content-Disposition: form-data; name="files"; filename="links.csv"
+Content-Type: text/csv
+
+< ./samples/multi-echelon-50-node/links.csv
+--SNRM
+Content-Disposition: form-data; name="files"; filename="products.csv"
+Content-Type: text/csv
+
+< ./samples/multi-echelon-50-node/products.csv
+--SNRM
+Content-Disposition: form-data; name="files"; filename="node_products.csv"
+Content-Type: text/csv
+
+< ./samples/multi-echelon-50-node/node_products.csv
+--SNRM--
+
+
+### 54b. No files at all. Expect 400, code BAD_REQUEST — a malformed request,
+# unlike a file the importer understood and rejected.
+POST {{baseUrl}}/networks/import
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=SNRM
+
+--SNRM
+Content-Disposition: form-data; name="projectId"
+
+{{projectId}}
+--SNRM
+Content-Disposition: form-data; name="name"
+
+Nothing attached
+--SNRM--
+
+
+### 54c. An unknown project. Expect 404, code NOT_FOUND.
+POST {{baseUrl}}/networks/import
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=SNRM
+
+--SNRM
+Content-Disposition: form-data; name="projectId"
+
+999999
+--SNRM
+Content-Disposition: form-data; name="name"
+
+Wrong project
+--SNRM
+Content-Disposition: form-data; name="files"; filename="nodes.csv"
+Content-Type: text/csv
+
+< ./samples/minimal-6-node/nodes.csv
+--SNRM--
+
+
+### 55. The XML interchange document — one self-describing file.
+# Expect 201, 0 errors, 0 warnings. Note what is NOT sent: no "name" field. The
+# document declares its own (<meta name="XML 6-node">), which the import uses.
+# The nodes carry posX/posY, so the network opens in the editor already arranged
+# rather than auto-laid-out.
+# @name importXml
+POST {{baseUrl}}/networks/import
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=SNRM
+
+--SNRM
+Content-Disposition: form-data; name="projectId"
+
+{{projectId}}
+--SNRM
+Content-Disposition: form-data; name="files"; filename="network.xml"
+Content-Type: application/xml
+
+< ./samples/xml-6-node/network.xml
+--SNRM--
+
+@xmlNetworkId = {{importXml.response.body.$.networkId}}
+
+### 56. Export it straight back out as XML. Expect 200 and an application/xml
+# body. Save it and diff against samples/xml-6-node/network.xml: the same
+# network, the same units, the same coordinates. Re-import that file under the
+# same name and it becomes version 2 — a configuration variant.
+GET {{baseUrl}}/networks/{{xmlNetworkId}}/export?format=xml
+Authorization: Bearer {{token}}
+
+
+### 56b. Delete a network. Expect 204, and the network and everything beneath it
+# is gone. Refused with 409 NETWORK_IMMUTABLE once a simulation run references
+# it — not reachable yet, since simulations are not built.
+# In the UI this needs the project's name typed into the dialog first (FR-15).
+DELETE {{baseUrl}}/networks/{{xmlNetworkId}}
+Authorization: Bearer {{token}}
+
+
+###############################################################################
+# TOPOLOGICAL METRICS
+#
+# The network imported below is the one docs/metric-verification.md works
+# through by hand. Request 58 returns the suite; every number it returns is
+# derived arithmetically in that document, so the two can be diffed against each
+# other rather than against an expectation nobody wrote down.
+###############################################################################
+
+### 57. Import the verification network — six nodes, seven links, one product.
+# Expect 201, 0 errors and exactly 1 warning: LATERAL_LINK on DC-1 → DC-2, the
+# transshipment arc permitted with a flag. That arc is deliberate — it is
+# what gives the network triangles, without which CLUSTERING is 0 and a broken
+# implementation would agree with a correct one. Topology drawn in
+# docs/metric-verification.md §1.
+# @name importMetricSample
+POST {{baseUrl}}/networks/import
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=SNRM
+
+--SNRM
+Content-Disposition: form-data; name="projectId"
+
+{{projectId}}
+--SNRM
+Content-Disposition: form-data; name="name"
+
+Metric verification
+--SNRM
+Content-Disposition: form-data; name="files"; filename="network_meta.csv"
+Content-Type: text/csv
+
+< ./samples/metric-verification-6-node/network_meta.csv
+--SNRM
+Content-Disposition: form-data; name="files"; filename="nodes.csv"
+Content-Type: text/csv
+
+< ./samples/metric-verification-6-node/nodes.csv
+--SNRM
+Content-Disposition: form-data; name="files"; filename="links.csv"
+Content-Type: text/csv
+
+< ./samples/metric-verification-6-node/links.csv
+--SNRM
+Content-Disposition: form-data; name="files"; filename="products.csv"
+Content-Type: text/csv
+
+< ./samples/metric-verification-6-node/products.csv
+--SNRM
+Content-Disposition: form-data; name="files"; filename="node_products.csv"
+Content-Type: text/csv
+
+< ./samples/metric-verification-6-node/node_products.csv
+--SNRM--
+
+@metricNetworkId = {{importMetricSample.response.body.$.networkId}}
+
+### 58. The topological metric suite. Expect 200, and exactly these values —
+# every one of them derived by hand in docs/metric-verification.md:
+#
+#   DENSITY              0.23333333333333334   (7 / 30)
+#   SPOF_NODE_COUNT      3
+#   SPOF_ARC_COUNT       3
+#   SPOF_COUNT           6
+#   AVG_PATH             1.6153846153846154    (21 / 13)
+#   CLUSTERING           0.3888888888888889    (7 / 18)
+#   NODE_CRITICALITY     SUP-1   1.0
+#                        PLANT-1 1.0
+#                        DC-1    0.6153846153846154   (8 / 13)
+#                        DC-2    0.0
+#                        CUST-1  0.6153846153846154   (8 / 13)
+#                        CUST-2  0.38461538461538464  (5 / 13)
+#   ROBUSTNESS_RANDOM    0.35648148148148145   (77 / 216)
+#   ROBUSTNESS_TARGETED  0.3888888888888889    (7 / 18)
+#
+# Fourteen rows: eight network-scoped, six NODE-scoped criticalities, in the
+# suite order listed above — density and the three single-point-of-failure
+# figures lead it. Every row has runId=null, ciLow=null and
+# ciHigh=null (exact, not aggregated), and displayUnit=null (nothing
+# here is time-valued).
+#
+# Rt above Rr is not a defect; §7 of the verification document explains it.
+GET {{baseUrl}}/networks/{{metricNetworkId}}/metrics/topological
+Authorization: Bearer {{token}}
+
+### 58b. Call it again. Expect 200 with the same values and the same row count —
+# a recompute replaces the network's run-less rows rather than adding to them.
+# The `id`s change, which is the visible sign of the replacement.
+GET {{baseUrl}}/networks/{{metricNetworkId}}/metrics/topological
+Authorization: Bearer {{token}}
+
+### 58c. The suite for a network that does not exist. Expect 404, code NOT_FOUND.
+GET {{baseUrl}}/networks/999999/metrics/topological
+Authorization: Bearer {{token}}
+
+
+###############################################################################
+# SIMULATION — the engine and the simulated metric suite.
+#
+# Requests 60-68 import the three-node chain of docs/simulation-verification.md,
+# define its one deterministic disruption, run it with a fixed seed and one
+# replication, and fetch results whose every value that document derives by hand.
+# If a number here disagrees with §8 of that document, one of the two is wrong
+# and the document is the specification.
+###############################################################################
+
+### 60. Import samples/simulation-verification-3-node/. Expect 200 with
+# committed: true, 3 nodes, 2 links, 1 product, 3 node-product rows and no
+# findings — every duration is a whole number of days on a 1-day period.
+# @name importSimulationSample
+POST {{baseUrl}}/networks/import
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=SNRM
+
+--SNRM
+Content-Disposition: form-data; name="projectId"
+
+{{projectId}}
+--SNRM
+Content-Disposition: form-data; name="name"
+
+Simulation verification
+--SNRM
+Content-Disposition: form-data; name="files"; filename="network_meta.csv"
+Content-Type: text/csv
+
+< ./samples/simulation-verification-3-node/network_meta.csv
+--SNRM
+Content-Disposition: form-data; name="files"; filename="nodes.csv"
+Content-Type: text/csv
+
+< ./samples/simulation-verification-3-node/nodes.csv
+--SNRM
+Content-Disposition: form-data; name="files"; filename="links.csv"
+Content-Type: text/csv
+
+< ./samples/simulation-verification-3-node/links.csv
+--SNRM
+Content-Disposition: form-data; name="files"; filename="products.csv"
+Content-Type: text/csv
+
+< ./samples/simulation-verification-3-node/products.csv
+--SNRM
+Content-Disposition: form-data; name="files"; filename="node_products.csv"
+Content-Type: text/csv
+
+< ./samples/simulation-verification-3-node/node_products.csv
+--SNRM--
+
+@simNetworkId = {{importSimulationSample.response.body.$.networkId}}
+
+### 61. The imported network's nodes, so the event below can name PLANT-1's id.
+# @name simNodes
+GET {{baseUrl}}/networks/{{simNetworkId}}/nodes
+Authorization: Bearer {{token}}
+
+# nodes.csv order is SUP-1, PLANT-1, CUST-1, and the importer assigns ids in
+# file order — so PLANT-1 is the second row.
+@plantNodeId = {{simNodes.response.body.$[1].id}}
+
+### 62. The scenario of docs/simulation-verification.md §1.4. Expect 201.
+# seed and numReplications are set here; request 65 overrides the replication
+# count to 1 so the run is hand-checkable.
+# @name simScenario
+POST {{baseUrl}}/projects/{{projectId}}/scenarios
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "Plant outage",
+  "numReplications": 100,
+  "seed": 20260802
+}
+
+@simScenarioId = {{simScenario.response.body.$.id}}
+
+### 63. The one event: PLANT-1 at half capacity for three days from day 3.
+# Expect 201. STEP recovery, probability 1.0 — nothing about this run is random.
+POST {{baseUrl}}/scenarios/{{simScenarioId}}/events?networkId={{simNetworkId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "targetType": "NODE",
+  "targetId": {{plantNodeId}},
+  "startOffset": { "value": 3, "unit": "DAY" },
+  "duration": { "value": 3, "unit": "DAY" },
+  "severity": 0.5,
+  "recoveryProfile": "STEP",
+  "probability": 1.0
+}
+
+### 64. Submit with an event that names nothing in this network. Expect 422,
+# code EVENT_TARGET_UNRESOLVED, with eventIds listing the offender — the
+# cross-variant case DisruptionScenarioService cannot catch at write time.
+# Run this only after re-targeting an event by hand; it is here to document the
+# refusal, not as part of the happy path.
+#
+# POST {{baseUrl}}/simulations
+# Authorization: Bearer {{token}}
+# Content-Type: application/json
+#
+# { "networkId": {{metricNetworkId}}, "scenarioId": {{simScenarioId}} }
+
+### 65. Submit the run of docs/simulation-verification.md §1.5. Expect 202 with
+# a jobId, a runId, status QUEUED and the fully resolved params — including the
+# seed, which is what makes the run replayable.
+#
+# One replication and safetyStockPriority 0, so the table in §4.3 is derivable
+# by inspection: replenishment is off and nothing is random. The run still
+# executes TWO replications — the undisrupted baseline set is not
+# optional, and TTR, LOSS_AREA, DISRUPTION_COST_DELTA and RESILIENCE_INDEX are
+# undefined without it. Expect `replications: 2` in the response.
+# @name submitSimulation
+POST {{baseUrl}}/simulations
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "networkId": {{simNetworkId}},
+  "scenarioId": {{simScenarioId}},
+  "params": {
+    "replications": 1,
+    "seed": 20260802,
+    "demandNoiseCv": 0,
+    "timingJitterPeriods": 0,
+    "safetyStockPriority": 0
+  }
+}
+
+@jobId = {{submitSimulation.response.body.$.jobId}}
+@runId = {{submitSimulation.response.body.$.runId}}
+
+### 66. Poll the job. Expect 200 and, on a network this small,
+# status DONE with progress 1.0 on the first poll. `resourceId` is the runId.
+GET {{baseUrl}}/jobs/{{jobId}}
+Authorization: Bearer {{token}}
+
+### 67. The metric suite. Expect 200 and exactly these eleven values — every one
+# of them derived by hand in docs/simulation-verification.md §8:
+#
+#   FILL_RATE              0.94                 (470 / 500)
+#   SERVICE_LEVEL          0.7                  (7 of 10 periods served in full)
+#   MIN_FILL_RATE          0.8
+#   TTR                    3.0                  displayUnit DAY
+#   LOSS_AREA              0.5999999999999999   (3 x 0.2, in fill-rate.periods)
+#   TOTAL_COST             6315.0
+#   DISRUPTION_COST_DELTA  390.0                (6315 - 5925)
+#   CVAR_COST              6315.0
+#   RESILIENCE_INDEX       0.9142857142857143   (32 / 35)
+#   AVG_INVENTORY          5.0                  (50 / 10 — see §6.6)
+#   AVG_PIPELINE           0.0                  (nothing is ever in flight here)
+#
+# Every row is NETWORK-scoped with runId set. Every ciLow and ciHigh is null:
+# one replication has no sample variance, and CVAR_COST carries no interval at
+# any replication count. Only TTR has a displayUnit — it is the one
+# time-valued metric in the suite.
+#
+# AVG_PIPELINE is a row reading 0.0, NOT an absent row. A zero pipeline is a
+# measurement this network's zero lead times produce; the absent case is the
+# four disruption-relative metrics on a baseline run (request 81).
+# samples/four-echelon-playback/ §6.1 is where the pair is non-trivial:
+# AVG_INVENTORY 22.0 and AVG_PIPELINE 29.0.
+GET {{baseUrl}}/simulations/{{runId}}/results
+Authorization: Bearer {{token}}
+
+### 68. The per-period curves. Expect 200 and the ten points of §7 — both the
+# disrupted curve and the undisrupted baseline one, which is what makes the
+# resilience triangle drawable without recomputation.
+#
+#   period 0    served 50   cost 375   baselineServed 50   baselineCost 375
+#   period 1    served 50   cost 350   baselineServed 50   baselineCost 350
+#   period 2    served 50   cost 650   baselineServed 50   baselineCost 650
+#   periods 3-5 served 40   cost 780   baselineServed 50   baselineCost 650
+#   periods 6-9 served 50   cost 650   baselineServed 50   baselineCost 650
+#
+# Sum of `cost` = 6315 and of `baselineCost` = 5925, matching §4.3 and §4.4.
+#
+# Each point also carries the two columns V9__element_timeseries.sql added:
+# `endingInventory` is 50 in period 0 and 0 in every other period (PLANT-1's
+# stock, and no other node here ever holds anything), and `inPipeline` is 0 in
+# ALL TEN — both lead times are zero and no node dwells, so nothing is ever in
+# flight. That zero is the point of the network, not a gap; see §7.1 and
+# samples/four-echelon-playback/ for the case where it is not zero.
+GET {{baseUrl}}/simulations/{{runId}}/timeseries
+Authorization: Bearer {{token}}
+
+### 68b. The whole run in one call. Expect 200 with the run record,
+# the same eleven metrics and the same ten points. `run.params` is what
+# actually ran, read back from params_json.
+GET {{baseUrl}}/simulations/{{runId}}
+Authorization: Bearer {{token}}
+
+### 68c. The network is now frozen. Expect 409, code NETWORK_IMMUTABLE, with
+# networkId — a run in QUEUED, RUNNING or DONE holds its network, and
+# results are stated in periods, so redefining the period would turn "TTR = 3
+# days" into "TTR = 3 hours" without changing a stored number.
+# The remedy is to clone (request 26) and set the time base on the variant.
+#
+# This is the case request 37 could not provoke until the simulation engine
+# existed.
+PUT {{baseUrl}}/networks/{{simNetworkId}}/time-base
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "periodLength": { "value": 1, "unit": "HOUR" },
+  "horizonPeriods": 240,
+  "roundingPolicy": "NEAREST"
+}
+
+### 68d. Cancel a finished job. Expect 200, not an error — cancellation is
+# idempotent, so the UI's stop button does not have to win a race.
+# The status comes back DONE, unchanged.
+DELETE {{baseUrl}}/jobs/{{jobId}}
+Authorization: Bearer {{token}}
+
+### 68e. Poll a job that does not exist. Expect 404 — which does not mean work
+# was lost: jobs are held in memory and bounded by snrm.jobs.retention, while
+# the run and its results are durable in simulation_run.
+GET {{baseUrl}}/jobs/00000000-0000-0000-0000-000000000000
+Authorization: Bearer {{token}}
+
+### 68f. Submit against a network with no demand. Expect 422, code
+# NETWORK_HAS_NO_DEMAND — every simulated metric would report perfect service
+# for every scenario, which is indistinguishable from a resilient network.
+# Uses the metric-verification network's project-mate only if it has customers;
+# run this against a network you have stripped of demand.
+#
+# POST {{baseUrl}}/simulations
+# Authorization: Bearer {{token}}
+# Content-Type: application/json
+#
+# { "networkId": {{networkId}}, "scenarioId": {{simScenarioId}} }
+
+### 68g. Submit against a run of 100 replications — the default, and
+# the point at which the confidence intervals mean something.
+# Expect 202, then a job that takes visibly longer. `replications: 200` in the
+# response, because the baseline set doubles it.
+#
+# The suite's values will differ from §8 only in that ciLow and ciHigh are now
+# populated on every metric except CVAR_COST; with no noise and no jitter the
+# 100 replications are identical, so each interval collapses to a point.
+# @name submitFullRun
+POST {{baseUrl}}/simulations
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "networkId": {{simNetworkId}},
+  "scenarioId": {{simScenarioId}}
+}
+
+
+###############################################################################
+# COMPARISON AND EXPORT — requests 69–74
+#
+# These read what requests 60–68 produced. Run at least one simulation first,
+# or every simulated cell comes back null with a NO_RUN note — which is itself
+# worth seeing once.
+###############################################################################
+
+### 69. The cross-variant metric matrix. Expect 200.
+#
+# What to check, in order:
+#   * `variants` is in the order networkIds names them — a researcher building
+#     a table to read left to right gets the columns they asked for.
+#   * every `rows[].cells[]` is aligned by index with `variants`, and a null is
+#     "not measured", never zero.
+#   * `rows[].direction` is the calculator's own declaration, and the
+#     structural rows — DENSITY, AVG_PATH, CLUSTERING — are NEUTRAL with no
+#     cell marked `best`. That is a decision, not a gap: none of the three is
+#     an objective.
+#   * exactly one code carries `timeValued: true` — TTR — and its `unit` is the
+#     finest period unit among the compared variants. Each of its
+#     cells carries both the converted `value` and the raw `periods`.
+#   * NODE_CRITICALITY is absent. It is one row per node and belongs
+#     to the dashboard's table, not to a matrix whose rows are metrics.
+GET {{baseUrl}}/projects/{{projectId}}/comparison?networkIds={{simNetworkId}}&networkIds={{variantNetworkId}}
+Authorization: Bearer {{token}}
+
+### 70. The same, pinned to one scenario. Expect 200 and no MIXED_SCENARIOS
+# note. Without ?scenarioId= each column takes its network's most recent DONE
+# run whatever it applied — so one column can be a plant outage and the next a
+# port closure, and the lever change gets the credit for the difference.
+GET {{baseUrl}}/projects/{{projectId}}/comparison?networkIds={{simNetworkId}}&networkIds={{variantNetworkId}}&scenarioId={{simScenarioId}}
+Authorization: Bearer {{token}}
+
+### 71. Every network in the project — omit networkIds. Expect 200, and
+# expect notes: any network that has never been simulated produces a NO_RUN
+# note and fills only the topological half of its column. This is the request
+# that shows MIXED_TIME_BASES if request 68c's period change was committed,
+# since that variant then steps in hours while the others step in days.
+# The values stay comparable — TTR is converted — but the models
+# are not identical, and the note says so.
+GET {{baseUrl}}/projects/{{projectId}}/comparison
+Authorization: Bearer {{token}}
+
+### 72. A network from another project. Expect 404, with the same message a
+# missing id gives: telling the caller an id exists elsewhere is information
+# they have not earned (NetworkLookup makes the same choice).
+GET {{baseUrl}}/projects/{{projectId}}/comparison?networkIds=999999
+Authorization: Bearer {{token}}
+
+### 73. Export the run — three tables as one workbook.
+#
+# `run` is provenance, params_json verbatim, seed included. `metrics` writes a
+# time-valued metric twice: `value` in periods and `value_in_display_unit`
+# beside its unit, so TTR reads as 14 and as 14 days. `timeseries` carries both
+# curves plus `fill_rate_loss`, the height of the resilience triangle at each
+# period.
+#
+# NOTE on that column: summing it gives a *lower bound* on LOSS_AREA, not the
+# metric. These rows are replication averages while the metric takes
+# each replication's shortfall before averaging — the same quantity with the
+# mean and the max(0, …) in the other order. They coincide exactly on a
+# deterministic run, which is what §8 of docs/simulation-verification.md uses.
+# `cost_delta` is linear and does sum exactly to DISRUPTION_COST_DELTA.
+GET {{baseUrl}}/simulations/{{runId}}/export?format=xlsx
+Authorization: Bearer {{token}}
+
+### 73b. The same as a zip of three CSV files — the form to diff or read into
+# R. `?format=csv` and `?format=zip` are synonyms, and both are case-insensitive.
+GET {{baseUrl}}/simulations/{{runId}}/export?format=CSV
+Authorization: Bearer {{token}}
+
+### 73c. An unrecognised format. Expect 400 naming the two that work. There is
+# no `xml` here on purpose: the XML interchange document exists for a
+# *network*, and a metric table has no way back in — offering it would produce
+# a document nothing can read.
+GET {{baseUrl}}/simulations/{{runId}}/export?format=xml
+Authorization: Bearer {{token}}
+
+### 74. Export the comparison matrix. Expect 200 and a workbook of three
+# tables: `comparison`, `variants` and `notes`.
+#
+# Each variant occupies three columns — value, ci_low, ci_high — so every cell
+# stays a number a reader can sort and chart. `best` names the winning variant
+# or the tied ones, and is empty on a NEUTRAL row. `variants` carries
+# lever_changes, which is what makes an exported matrix a finding rather than a
+# scoreboard. `notes` travels with the file deliberately: a
+# matrix separated from its "these use different period lengths" warning is a
+# matrix that will be misread.
+GET {{baseUrl}}/projects/{{projectId}}/comparison/export?networkIds={{simNetworkId}}&networkIds={{variantNetworkId}}&format=xlsx
+Authorization: Bearer {{token}}
+
+
+###############################################################################
+# PROJECT ARCHIVE
+#
+# The XML archives a network's *inputs*. This archives the whole
+# experiment: the project, every network, every scenario and event, and every
+# completed run with its parameter set, metric results and time series — which
+# is what makes an entire experiment archivable alongside the thesis, and what
+# guards against single-case validation.
+#
+# Run these after the simulation block, so the project has completed runs to
+# archive. Save the response of 75 to disk, then upload that file in 76.
+###############################################################################
+
+### 75. Archive the project. Expect 200, `application/zip`, and a
+# Content-Disposition naming it `<project>-archive.zip`.
+#
+# Inside: `bundle.json` with the manifest, the catalogue, the scenarios, the
+# runs and their results; and `networks/001-<name>@v1.xml`, one XML
+# interchange document per network — byte-identical to what request 55 returns,
+# so a single network can be lifted out of the zip and imported on its own.
+#
+# The manifest records the simulation engine version. A stored parameter set
+# replays exactly only against the engine that wrote it, so the
+# restore compares the two and says so.
+#
+# REST Client writes the body to a file with the "Save Response Body" button;
+# curl is easier if you plan to re-upload it:
+#   curl -H "Authorization: Bearer <token>" -OJ \
+#     http://localhost:8080/api/v1/projects/1/archive
+GET {{baseUrl}}/projects/{{projectId}}/archive
+Authorization: Bearer {{token}}
+
+### 76. Restore it into a NEW project. Expect 201, a Location header naming the
+# new project, and an ArchiveReport.
+#
+# Read three things in the response. `engineMatches` — false means the archived
+# results came from a different engine and must not be placed beside a locally
+# computed run without re-running. `restoredCounts` against `sourceCounts` —
+# any shortfall is explained by a finding. And `findings` itself, which is
+# empty on a clean restore.
+#
+# Never a merge: the archive always lands in a new project, and the name is
+# suffixed "(restored)" if this user already has one by that name. Every run it
+# creates carries `importedAt` and `sourceRunId` — check with request 77.
+#
+# Point `< ./` at wherever you saved request 75's response.
+POST {{baseUrl}}/projects/archive/import
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=----SnrmArchiveBoundary
+
+------SnrmArchiveBoundary
+Content-Disposition: form-data; name="file"; filename="archive.zip"
+Content-Type: application/zip
+
+< ./archive.zip
+------SnrmArchiveBoundary
+Content-Disposition: form-data; name="name"
+
+Resilience study (replication)
+------SnrmArchiveBoundary--
+
+### 77. A restored run reports its provenance. Expect `importedAt` non-null and
+# `sourceRunId` naming the id it held where it was computed.
+#
+# This is the point of the two columns V7 adds. A restored run is a genuine
+# DONE run — it freezes its network and it appears in the
+# comparison view, both correct — so these fields are the only thing
+# distinguishing a number this installation computed from one it was handed.
+# Replace {{restoredRunId}} with a run id from the restored project.
+GET {{baseUrl}}/simulations/{{restoredRunId}}
+Authorization: Bearer {{token}}
+
+### 78. Not an archive. Expect 422 with code ARCHIVE_UNREADABLE.
+#
+# A format version this build does not know is refused the same way, rather
+# than parsed optimistically — the rule XmlSchema applies to network XML. The
+# *engine* version is the opposite case and only warns: a reader that cannot
+# parse a document cannot warn about it either, but one that parses a document
+# from an older engine can say exactly what it found.
+POST {{baseUrl}}/projects/archive/import
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=----SnrmArchiveBoundary
+
+------SnrmArchiveBoundary
+Content-Disposition: form-data; name="file"; filename="not-an-archive.zip"
+Content-Type: application/zip
+
+this is not a zip
+------SnrmArchiveBoundary--
+
+
+###############################################################################
+# CLEANUP (optional) — removes the project and everything under it.
+###############################################################################
+
+### 59. Delete the project. Expect 204. Every network under it cascades,
+# imported ones included, and each network's metric_result rows with them.
+DELETE {{baseUrl}}/projects/{{projectId}}
+Authorization: Bearer {{token}}
+
+
+###############################################################################
+# FR-17 - THE BASELINE RUN, PROVISIONAL FIGURES, AND COMPARISON BY RUN
+###############################################################################
+
+### 79. A baseline run: no scenarioId at all. Expect 202, and `replications`
+# equal to N rather than 2N - an undisrupted run has no disruption to isolate,
+# so the paired set is skipped rather than computed twice.
+# Replications and seed come from params here, since there is no scenario to
+# read defaults from.
+POST {{baseUrl}}/simulations
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "networkId": {{networkId}},
+  "params": { "replications": 1, "seed": 20260803 }
+}
+
+### 80. Poll it. While RUNNING, expect a `partial` object - the provisional
+# figures of FR-17: {replicationsDone, replicationsTotal, fillRate,
+# minFillRate, totalCost}. Streaming statistics over the completed
+# replications only: no confidence intervals, nothing that needs the whole
+# set (CVAR_COST above all). Once the status is terminal, `partial` is null -
+# the persisted suite supersedes it, which is why a client must label these
+# provisional and never persist or export them.
+# Replace {{baselineJobId}} with request 79's jobId. A one-replication run
+# finishes fast; use 100+ replications to actually watch the figures move.
+GET {{baseUrl}}/jobs/{{baselineJobId}}
+Authorization: Bearer {{token}}
+
+### 81. The baseline run's suite. Expect FILL_RATE, SERVICE_LEVEL,
+# MIN_FILL_RATE, TOTAL_COST, CVAR_COST, AVG_INVENTORY and AVG_PIPELINE - and
+# NO TTR, LOSS_AREA, DISRUPTION_COST_DELTA or RESILIENCE_INDEX. Those four are
+# defined against a disruption and nothing here was disrupted: an absent row is
+# unmeasured, never zero, and every reader must already treat it that way.
+# The inventory pair is on the OTHER side of that line - it
+# describes what the network held, which a run with no scenario answers as
+# well as any other, so both rows are present.
+# The run record itself carries scenarioId: null, which is how a client knows
+# to label it "Baseline".
+# On samples/four-echelon-playback/ this is the seven-row table of that
+# sample's README §6.1, with AVG_INVENTORY 22.0 and AVG_PIPELINE 29.0.
+GET {{baseUrl}}/simulations/{{baselineRunId}}
+Authorization: Bearer {{token}}
+
+### 82. Compare by RUN, not by network (FR-17). Expect one column per named
+# run, in request order - which is what expresses the two questions the
+# network-keyed form cannot: this network's baseline beside its disruption
+# run, and one network under two scenarios. Expect the MIXED_SCENARIOS note
+# to fire, correctly: baseline-versus-disruption measures ONLY the scenario,
+# and the note is the row of text that says so.
+# Replace the ids with request 79's runId and any DONE scenario run of the
+# same network.
+GET {{baseUrl}}/projects/{{projectId}}/comparison?runIds={{baselineRunId}},{{scenarioRunId}}
+Authorization: Bearer {{token}}
+
+### 83. The two selectors are mutually exclusive. Expect 400 BAD_REQUEST -
+# columns are keyed either by network or by run, and a request carrying both
+# is ambiguous about which it asked.
+GET {{baseUrl}}/projects/{{projectId}}/comparison?runIds={{baselineRunId}}&networkIds={{networkId}}
+Authorization: Bearer {{token}}
+
+### 84. A run that is not DONE cannot be a column. Expect 409 RUN_NOT_DONE:
+# unlike a network with no run (which keeps a column and shows its
+# topological half), a half-finished run has nothing to show YET, and an
+# empty column that silently fills in on the next request would be a matrix
+# that changes meaning between two renders of one URL.
+# Submit a slow run first and use its runId here before it finishes.
+GET {{baseUrl}}/projects/{{projectId}}/comparison?runIds={{runningRunId}}
+Authorization: Bearer {{token}}
+
+### 85. The run-keyed matrix, exported. Same selector, same file shape; two
+# runs of one network get disambiguated column headers - "Baseline v1 -
+# Plant outage (run 13)" - because two columns named identically would make
+# the spreadsheet's `best` cell ambiguous.
+GET {{baseUrl}}/projects/{{projectId}}/comparison/export?runIds={{baselineRunId}},{{scenarioRunId}}&format=xlsx
+Authorization: Bearer {{token}}
+
+
+###############################################################################
+# FR-18 - THE PER-ELEMENT TIME SERIES
+#
+# What every node and every link did in every period, which GET /timeseries
+# aggregates away and cannot be disaggregated back into. These three read the
+# 4-echelon baseline run of samples/four-echelon-playback/ - re-import that
+# network FRESH (the Stage-1 copy is frozen by a pre-V9 run) and submit with no
+# scenarioId, then set @elementRunId to the runId it returned.
+#
+# Every expected value below is derived by hand in that sample's README:
+# on-hand in §6.5.1, flows in §6.5.2, arrivals in §6.5.3, inbound leads in
+# §6.5.4, and the baseline copy-in in §6.5.5. Node and link ids are whatever
+# the importer assigned - use request 61's shape (GET /networks/{id}/nodes) to
+# find them; the ORDER is SUP-1, PLANT-1, DC-1, CUST-1 and then a, b, c.
+###############################################################################
+
+@elementRunId = 14
+@dcNodeId = 3
+@linkCId = 3
+
+### 86. Every element's series. Expect 200, `available: true`, four nodes and
+# three links, and every array 30 long (the network's horizon).
+#
+#   nodes, `onHand`  SUP-1   10, 10, 20, 10, then 10 to t=29
+#                    PLANT-1  5, 15, 15,  5, then  5
+#                    DC-1    15, 15,  5,  5, then  5
+#                    CUST-1  10,  0,  0,  0, then  0
+#   nodes, `served`  CUST-1 is 10 in all thirty periods; every other node 0,
+#                    and every `unserved` is 0 everywhere (§6.5.1)
+#   nodes, `throughput`
+#                    SUP-1 is 10 in every period EXCEPT t=3, where it is 0;
+#                    PLANT-1, DC-1 and CUST-1 are 0 in all thirty. Every leg
+#                    has a lead time, so inbound material lands in the hold and
+#                    never crosses the target's capacity arc (§6.5.1).
+#   nodes, `arrivals`
+#                    PLANT-1  0, 10, 10,  0, then 10
+#                    DC-1     0, 10,  0, 10, then 10
+#                    CUST-1   0,  0, 10, 10, then 10
+#                    SUP-1 is 0 throughout - nothing is inbound to an origin.
+#   nodes, `inboundLead`
+#                    SUP-1   null in ALL thirty periods (no inbound arc)
+#                    PLANT-1 1.0, 1.0, null, 1.0, then 1.0
+#                    DC-1    1.0, null, 1.0, 1.0, then 1.0
+#                    CUST-1  null, 1.0, 1.0, 1.0, then 1.0
+#                    A null is a claim - nothing was dispatched toward it that
+#                    period. A 0.0 would say it arrived instantly (§6.5.4).
+#   links, `flow`    a S>P  10, 10,  0, 10, then 10
+#                    b P>D  10,  0, 10, 10, then 10
+#                    c D>C   0, 10, 10, 10, then 10
+#   links, `utilisation`
+#                    flow / 100 - so 0.1 wherever the flow is 10 and exactly
+#                    0.0 (NOT null) wherever it is 0: an idle arc at full
+#                    availability is idle, not unmeasurable (§6.5.2).
+#   `availability`   1.0 on every node and every link in every period.
+#   baseline columns This is a baseline run, so `baselineOnHand`,
+#                    `baselineServed` and `baselineFlow` are COPIES of
+#                    `onHand`, `served` and `flow`, value for value - the
+#                    copy-in convention of V9__element_timeseries.sql. Assert
+#                    equality, not absence (§6.5.5).
+GET {{baseUrl}}/simulations/{{elementRunId}}/timeseries/elements
+Authorization: Bearer {{token}}
+
+### 87. One node. Expect 200 with the SAME envelope - `available: true`,
+# `nodes` holding exactly one entry, `links` empty. Point it at DC-1 and expect
+# `onHand` 15, 15, 5, 5, then 5 to t=29, `inboundLead` 1.0, null, 1.0, 1.0,
+# then 1.0, `served` 0 throughout (demand sits on CUSTOMER nodes) and
+# `throughput` 0 throughout.
+#
+# A node id this run recorded nothing for answers `available: true` with an
+# EMPTY list - the run recorded, that element did not appear. That is a
+# different statement from `available: false`, which means the run holds no
+# series at all: still QUEUED or RUNNING, older than V9, or submitted with
+# params.recordElementTimeseries = false. Neither is an error.
+GET {{baseUrl}}/simulations/{{elementRunId}}/timeseries/nodes/{{dcNodeId}}
+Authorization: Bearer {{token}}
+
+### 88. One link. Same envelope, `links` holding one entry and `nodes` empty.
+# Point it at arc c (DC-1 > CUST-1) and expect `flow` 0, 10, 10, 10, then 10,
+# `utilisation` 0.0, 0.1, 0.1, 0.1, then 0.1, `availability` 1.0 throughout and
+# `baselineFlow` equal to `flow`.
+#
+# Read `flow` as what was DISPATCHED. Arc c carries 0 at t=0 because CUST-1
+# opened at its order-up-to target of 20 and ordered nothing, and the 10 it
+# dispatches at t=1 arrives at CUST-1 at t=2 - which is why request 86's
+# `arrivals` for CUST-1 is 0, 0, 10, 10. That one-period offset is the whole
+# visual argument of this sample (§6.5.3, §8.3).
+GET {{baseUrl}}/simulations/{{elementRunId}}/timeseries/links/{{linkCId}}
+Authorization: Bearer {{token}}
+
+
+###############################################################################
+# FR-20 - DISCARDING A RUN, AND THE FREEZE IT RELEASES
+#
+# The exit from immutability. A run that is KEPT is exactly as network-freezing
+# as it ever was; what FR-20 adds is the ability to say the result was never
+# worth keeping. Because the freeze is DERIVED from the run rows
+# rather than stored on the network, deleting the last locking run makes the
+# network editable again with nothing else to reset - no flag, no second call.
+#
+# Run 65-68c first: they leave a DONE run ({{runId}}) against a frozen network
+# ({{simNetworkId}}), which is exactly the state this block operates on.
+###############################################################################
+
+### 89. What is actually holding this network frozen. Expect 200 and one entry
+# per run, NEWEST FIRST, as records without their results.
+#
+# This is the read the discard confirmation is built from: it has to
+# state how many results are about to be destroyed, and warn separately when
+# one of them is a RESTORED ARCHIVE RESULT - `importedAt` non-null, meaning
+# those numbers were computed by another installation and this may be the only
+# copy here. Check the run of request 65 is listed with status DONE,
+# `importedAt: null` and `sourceRunId: null`.
+#
+# An empty list is an ordinary answer: a network nobody has run yet. Compare
+# with `editable` on GET /networks/{id} - this list is the whole and only
+# reason that flag is false.
+GET {{baseUrl}}/networks/{{simNetworkId}}/runs
+Authorization: Bearer {{token}}
+
+### 90. Refused while a job owns the run. Expect 409 and code RUN_ACTIVE, with
+# a detail naming DELETE /jobs/{jobId} as what to do first.
+#
+# QUEUED and RUNNING are the two states in which a worker either holds the run
+# or is about to. Cancellation is cooperative and never interrupts,
+# so deleting the row underneath a worker would leave it writing a status, a
+# metric suite and three time series against an id that no longer exists. Two
+# calls, and the caller chooses between them.
+#
+# To provoke it: submit a run with 500+ replications against
+# samples/four-echelon-playback/, paste its runId below, and send this while
+# the poll still reports RUNNING. Then cancel its job and send it again -
+# CANCELLED deletes cleanly.
+DELETE {{baseUrl}}/simulations/{{activeRunId}}
+Authorization: Bearer {{token}}
+
+### 91. Discard the DONE run of request 65. Expect 204 and no body.
+#
+# Everything the run produced goes with it, by declared ON DELETE CASCADE:
+# metric_result (fk_mr_run, V2), run_timeseries (fk_timeseries_run, V2),
+# run_node_timeseries and run_link_timeseries (fk_node_ts_run / fk_link_ts_run,
+# V9). Nothing is deleted in application code - one definition of what a run
+# owns, and it is the schema's.
+DELETE {{baseUrl}}/simulations/{{runId}}
+Authorization: Bearer {{token}}
+
+### 92. The cascade left nothing behind. Expect 404 with code NOT_FOUND - the
+# run row is gone, so every read keyed on it is gone with it.
+#
+# Send 67 and 68 again for the same answer: the metric suite and the curves
+# have no run to belong to. The per-element series of request 86 likewise.
+GET {{baseUrl}}/simulations/{{runId}}
+Authorization: Bearer {{token}}
+
+### 93. THE POINT OF THE WHOLE FEATURE. Expect `editable: true`.
+#
+# Request 68c got 409 NETWORK_IMMUTABLE against this same network. Nothing has
+# been reset, unlocked or notified - the last locking run simply stopped
+# existing, and NetworkMutationGuard derives the freeze from the run rows on
+# every mutation. Send 68c again now and it succeeds.
+#
+# The network's TOPOLOGICAL metric rows survive: they carry run_id = NULL and
+# belong to the network rather than to any run, and nothing about the structure
+# changed. GET /networks/{id}/metrics/topological still answers.
+GET {{baseUrl}}/networks/{{simNetworkId}}
+Authorization: Bearer {{token}}
+
+### 94. Refused WHOLE while any run is active. Expect 409 RUN_ACTIVE, a detail
+# that names the runs in the way, and - the part worth checking - NOTHING
+# DELETED. Send request 89 again afterwards and the completed runs are all
+# still listed.
+#
+# Active runs are deliberately not skipped. A half-discard would destroy every
+# completed result and leave the network frozen anyway, since an active run
+# locks it too - the one thing the caller asked for would be the one
+# thing they did not get.
+#
+# To provoke it: submit one long run against {{networkId}} and send this while
+# it executes.
+DELETE {{baseUrl}}/networks/{{networkId}}/runs
+Authorization: Bearer {{token}}
+
+### 95. Discard every run of a network in one request. Expect 204.
+#
+# The editor's "discard this network's runs and edit in place". One
+# request rather than N, because the question is about the NETWORK - stop this
+# being frozen - and a client looping over runs would release the freeze
+# somewhere inside its own loop with nothing to say if the third call failed.
+#
+# Send it twice: the second time is also 204. A network with no runs is what
+# the caller asked for, and reporting a failure on the second click of one
+# button would be a lie about the state.
+DELETE {{baseUrl}}/networks/{{networkId}}/runs
+Authorization: Bearer {{token}}
+
+### 96. Another user's run. Expect 404 with code NOT_FOUND - the same answer
+# every other run read gives, and for the same reason: confirming that an id
+# exists elsewhere is information the caller has not earned. With
+# one research user in Phase 1 this fires only for an id that does not exist,
+# which is the same 404.
+DELETE {{baseUrl}}/simulations/999999
+Authorization: Bearer {{token}}
+
+### 97. A restored archive run deletes like any other. Expect 204.
+#
+# Request 77 leaves a run with `importedAt` set in the restored project. Paste
+# its runId below. Refusing here would make a restored project permanently
+# uneditable, which is the opposite of what the archive is for - so the warning
+# that these numbers were computed elsewhere and this may be the only copy
+# belongs in the confirmation dialog, not in a refusal.
+DELETE {{baseUrl}}/simulations/{{restoredRunId}}
+Authorization: Bearer {{token}}
+
+
+###############################################################################
+# EXPORTING A SUBSET AS A STANDALONE PROJECT (FR-24)
+#
+# `GET /projects/{id}/archive` gains an optional `?networkIds=`. The archive it
+# writes is the ordinary archive narrowed to those networks, so
+# restoring it through the same POST yields a separate project holding exactly
+# them. It COPIES and never moves.
+#
+# Three rules decide what a subset carries, and each is the safe answer rather
+# than the tidy one:
+#
+#   1. the WHOLE product catalogue travels — a node_product row names a product
+#      by name, so a computed subset risks a reference nothing resolves, and an
+#      unused entry is harmless where a dangling one is not;
+#   2. EVERY scenario travels, and an event whose target sits in a network you
+#      did not select restores dangling (a negative target_id) so the scenario
+#      visibly refuses to run rather than running with a disruption missing;
+#   3. a variant edge whose base network is not selected is DROPPED, and the
+#      manifest counts it rather than passing over it.
+#
+# By this point the project holds several networks — {{networkId}} (built by
+# hand), {{variantNetworkId}} (its clone), {{importedNetworkId}},
+# {{xmlNetworkId}}, {{metricNetworkId}} and {{simNetworkId}}. Requests 98-99 are
+# the round trip; 100 is the copy assertion; 101-102 are the refusals; 103 is
+# the promise that the no-parameter form did not move.
+###############################################################################
+
+### 98. Archive THREE of the project's networks. Expect 200, `application/zip`,
+# and a Content-Disposition naming it `<project>-3-networks-archive.zip` — the
+# count is in the filename because the subset is a copy and is meant to sit
+# beside the whole-project archive of request 75 rather than overwrite it in a
+# downloads folder.
+#
+# Inside, `bundle.json` carries a `manifest.selection` the whole-project archive
+# has no member for at all:
+#
+#   "selection": {
+#     "selectedNetworks": 3, "projectNetworks": 6,
+#     "networkKeys": [ … ], "droppedVariantEdges": N, "excludedEventTargets": N
+#   }
+#
+# `droppedVariantEdges` counts fork notes whose base network did not travel —
+# {{variantNetworkId}} was cloned from {{networkId}}, so selecting the clone
+# without its base is exactly that case. `excludedEventTargets` counts events
+# pointing into a network you left behind.
+#
+# Save the response to disk for request 99:
+#   curl -H "Authorization: Bearer <token>" -OJ \
+#     "http://localhost:8080/api/v1/projects/1/archive?networkIds=1&networkIds=2&networkIds=3"
+GET {{baseUrl}}/projects/{{projectId}}/archive?networkIds={{simNetworkId}}&networkIds={{variantNetworkId}}&networkIds={{metricNetworkId}}
+Authorization: Bearer {{token}}
+
+### 99. Restore the subset. Expect 201 and an ArchiveReport whose
+# `restoredCounts.networks` is 3 — exactly the networks named in 98, and no
+# others.
+#
+# Read the findings. `ARCHIVE_IS_SUBSET` is new and sits directly under any
+# engine warning, because it qualifies what is *present* where the engine one
+# qualifies every number. It states that the archive is a copy, that the whole
+# catalogue travelled (so a product no restored network uses is expected rather
+# than a fault), that every scenario travelled, and — when either happened —
+# how many event targets and how many fork notes did not.
+#
+# `restoredCounts` will NOT show a shortfall: the manifest counted what the
+# subset holds, so the arithmetic agrees. The finding is the only sign, which is
+# the whole reason it exists.
+#
+# Point `< ./` at wherever you saved request 98's response.
+POST {{baseUrl}}/projects/archive/import
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=----SnrmArchiveBoundary
+
+------SnrmArchiveBoundary
+Content-Disposition: form-data; name="file"; filename="subset.zip"
+Content-Type: application/zip
+
+< ./subset-archive.zip
+------SnrmArchiveBoundary
+Content-Disposition: form-data; name="name"
+
+Three networks (subset)
+------SnrmArchiveBoundary--
+
+### 100. THE COPY ASSERTION. Expect every network of the source project still
+# here, {{simNetworkId}}, {{variantNetworkId}} and {{metricNetworkId}} included,
+# each still Frozen or Editable exactly as it was.
+#
+# FR-24 says the export "copies and never moves: the selected networks, their
+# runs and their results stay in the project that computed them". Nothing in
+# `ProjectArchiveService` writes anything — the whole class is
+# @Transactional(readOnly = true) — and this is that stated as a check rather
+# than as an annotation. Confirm the runs too with GET /networks/{id}/runs.
+GET {{baseUrl}}/projects/{{projectId}}/networks
+Authorization: Bearer {{token}}
+
+### 101. A SCENARIO WHOSE EVENT TARGETS AN EXCLUDED NETWORK. Expect 422 with
+# code EVENT_TARGET_UNRESOLVED.
+#
+# This is carry rule 2 doing its job. The scenario travelled — it is
+# project-scoped and replayable across variants — but its event pointed at a
+# node of a network you did not select, so it restored with a NEGATIVE
+# target_id: a sentinel no AUTO_INCREMENT id can collide with, the same
+# convention an already-dangling target restores through.
+#
+# The event is therefore visible, structurally intact, and unrunnable. Dropping
+# it instead would have left a scenario that runs happily with one disruption
+# missing — a network shown absorbing something it never received, which is the
+# one direction a resilience study cannot afford to be wrong in.
+#
+# Replace both ids with a network and a scenario from the project request 99
+# created. Repoint the event in the scenario builder and it runs.
+POST {{baseUrl}}/simulations
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "networkId": {{restoredSubsetNetworkId}},
+  "scenarioId": {{restoredSubsetScenarioId}}
+}
+
+### 102. A network id from ANOTHER project. Expect 404, code NOT_FOUND, and a
+# detail naming the offending id and saying it was refused rather than skipped.
+#
+# Never a silently smaller archive. Skipping the id would write a file the
+# caller would restore later into a project quietly missing a configuration —
+# discovered, if at all, as an absent column in a comparison view. "Not yours"
+# and "does not exist" are the same answer, as everywhere else.
+GET {{baseUrl}}/projects/{{projectId}}/archive?networkIds={{simNetworkId}}&networkIds=999999
+Authorization: Bearer {{token}}
+
+### 103. `networkIds` present but naming nothing. Expect 400 BAD_REQUEST telling
+# you to omit the parameter instead.
+#
+# An empty selection and an omitted one mean opposite things — "none of them"
+# and "all of them" — so reading the first as the second would hand back the
+# whole project to a caller who asked for a subset of it.
+GET {{baseUrl}}/projects/{{projectId}}/archive?networkIds=
+Authorization: Bearer {{token}}
+
+### 104. THE NO-PARAMETER ARCHIVE IS UNCHANGED. Expect 200 and a
+# Content-Disposition naming it `<project>-archive.zip` — the old name, not the
+# subset one — and a `bundle.json` whose `manifest` has NO `selection` member at
+# all.
+#
+# This is request 75 again, and that is the point: the whole-project archive is
+# the reproducibility artefact and it does not get to change shape
+# because a second caller appeared. The selection travels as a manifest member
+# that is null on this path, and `spring.jackson.default-property-inclusion` is
+# `non_null`, so it is not written. Diff this against the file request 75
+# produced: only `exportedAt` differs.
+GET {{baseUrl}}/projects/{{projectId}}/archive
+Authorization: Bearer {{token}}
+
+
+###############################################################################
+# IMPORTING A NETWORK AS A VARIANT OF ANOTHER (FR-28)
+#
+# A project arrives as a folder of workbooks: one network per file, the wizard
+# asks which file is the baseline and what each of the others is, and a file
+# that is a CONFIGURATION VARIANT of the baseline is imported with the optional
+# `baseNetworkId` form field. That field is the ONLY backend addition the whole
+# feature needs.
+#
+# The edge is written in the SAME TRANSACTION that creates the network, one
+# statement after it. Two things follow, and both are the point:
+#
+#   * an imported variant is never briefly a network with no edge, so the
+#     provenance tree cannot draw a batch mid-import as a forest of roots;
+#   * a rolled-back import leaves no orphan edge either - there is no
+#     intermediate state to reconcile because there is no intermediate state.
+#
+# NOTHING IS DIFFED. This tool does not compare two networks, so `leverChanges`
+# is the note the request carries or nothing at all. Structural diffing of an
+# imported variant against its base is named as future work in
+# ImportService.recordVariantEdge; an invented diff would read as a lever the
+# researcher chose rather than an artefact of two files.
+#
+# A BATCH IS N OF THESE REQUESTS, sequenced by the wizard, baseline first -
+# there is no batch endpoint, because the per-file transaction and the per-file
+# report are exactly what one call already is.
+#
+# Requests 44-54 must have run: 105 forks {{importedNetworkId}}, the
+# minimal-6-node import of request 44.
+###############################################################################
+
+### 105. Import a workbook as a VARIANT of an existing network. Expect 201 and
+# the ordinary import report - plus, invisibly in this response, a
+# CONFIGURATION_VARIANT row pointing at {{importedNetworkId}}. Request 106 is
+# where you see it.
+#
+# Note what is NOT sent: `baseline`. The project's baseline flag and the base of
+# this batch's variant edges are two different things, and the wizard's roles
+# step keeps the names apart because conflating them is how the wrong thing gets
+# marked. Sending both is legal and means both.
+#
+# `leverChanges` is free-form JSON and is the only thing that ever fills the
+# variant's note. Omit it and the edge is an ordinary edge with a null note.
+# @name importVariant
+POST {{baseUrl}}/networks/import
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=SNRM
+
+--SNRM
+Content-Disposition: form-data; name="projectId"
+
+{{projectId}}
+--SNRM
+Content-Disposition: form-data; name="name"
+
+Dual sourcing (imported variant)
+--SNRM
+Content-Disposition: form-data; name="baseNetworkId"
+
+{{importedNetworkId}}
+--SNRM
+Content-Disposition: form-data; name="leverChanges"
+
+{"note": "second supplier qualified in EU-South"}
+--SNRM
+Content-Disposition: form-data; name="files"; filename="network_meta.csv"
+Content-Type: text/csv
+
+< ./samples/minimal-6-node/network_meta.csv
+--SNRM
+Content-Disposition: form-data; name="files"; filename="nodes.csv"
+Content-Type: text/csv
+
+< ./samples/minimal-6-node/nodes.csv
+--SNRM
+Content-Disposition: form-data; name="files"; filename="links.csv"
+Content-Type: text/csv
+
+< ./samples/minimal-6-node/links.csv
+--SNRM
+Content-Disposition: form-data; name="files"; filename="products.csv"
+Content-Type: text/csv
+
+< ./samples/minimal-6-node/products.csv
+--SNRM
+Content-Disposition: form-data; name="files"; filename="node_products.csv"
+Content-Type: text/csv
+
+< ./samples/minimal-6-node/node_products.csv
+--SNRM--
+
+@variantImportId = {{importVariant.response.body.$.networkId}}
+
+### 106. THE EDGE, THROUGH THE SURFACE THAT DRAWS THE TREE. Expect 200 and an
+# entry whose `network.id` is {{variantImportId}}, `baseNetworkId` is
+# {{importedNetworkId}}, `generatedBy` is MANUAL and `leverChanges` is the JSON
+# object of request 105 - as real JSON, not a string containing JSON.
+#
+# MANUAL because a person chose these files and said what each one was; SEARCH
+# is reserved for candidates the Phase 2 configuration engine persists.
+# This is the same list an editor fork (request 26) appears in, and
+# that is the whole reason the edge is recorded rather than the imported network
+# being left in the table with no parent anyone could name.
+GET {{baseUrl}}/networks/{{importedNetworkId}}/variants
+Authorization: Bearer {{token}}
+
+### 107. THE SAME REQUEST AS A DRY RUN. Expect 200, `committed: false`,
+# `networkId: null` - and no new edge.
+#
+# `validateOnly` creates no network, so it creates no edge either: an edge whose
+# network was never created is a foreign key with nothing behind it, not a
+# lesser version of the feature. Send request 106 again afterwards and the list
+# is exactly as long as it was.
+POST {{baseUrl}}/networks/import
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=SNRM
+
+--SNRM
+Content-Disposition: form-data; name="projectId"
+
+{{projectId}}
+--SNRM
+Content-Disposition: form-data; name="name"
+
+Never created
+--SNRM
+Content-Disposition: form-data; name="baseNetworkId"
+
+{{importedNetworkId}}
+--SNRM
+Content-Disposition: form-data; name="validateOnly"
+
+true
+--SNRM
+Content-Disposition: form-data; name="files"; filename="nodes.csv"
+Content-Type: text/csv
+
+< ./samples/minimal-6-node/nodes.csv
+--SNRM
+Content-Disposition: form-data; name="files"; filename="links.csv"
+Content-Type: text/csv
+
+< ./samples/minimal-6-node/links.csv
+--SNRM
+Content-Disposition: form-data; name="files"; filename="node_products.csv"
+Content-Type: text/csv
+
+< ./samples/minimal-6-node/node_products.csv
+--SNRM--
+
+### 108. A BASE FROM ANOTHER PROJECT. Expect 422, code
+# BASE_NETWORK_OUT_OF_SCOPE, and a detail naming both projects. NOTHING IS
+# CREATED - not the network, and certainly not a network with the edge quietly
+# dropped, which would be indistinguishable from a file the wizard was told was
+# independent.
+#
+# It is a 4xx rather than a row in the validation report because the report
+# answers for the user's DATA - the cells of their file, which is why it travels
+# as a 200 - while `baseNetworkId` is a request field the wizard composed, in
+# the same class as `projectId`. LINK_CROSS_NETWORK and PRODUCT_OUT_OF_SCOPE are
+# the precedents, and both are 422: the ids are real, their combination is not
+# something one project can express.
+#
+# Replace the id below with a network from the project request 76 or 99
+# restored into - GET /projects/{thatId}/networks lists them.
+@foreignNetworkId = 999998
+POST {{baseUrl}}/networks/import
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=SNRM
+
+--SNRM
+Content-Disposition: form-data; name="projectId"
+
+{{projectId}}
+--SNRM
+Content-Disposition: form-data; name="name"
+
+Orphan
+--SNRM
+Content-Disposition: form-data; name="baseNetworkId"
+
+{{foreignNetworkId}}
+--SNRM
+Content-Disposition: form-data; name="files"; filename="nodes.csv"
+Content-Type: text/csv
+
+< ./samples/minimal-6-node/nodes.csv
+--SNRM
+Content-Disposition: form-data; name="files"; filename="links.csv"
+Content-Type: text/csv
+
+< ./samples/minimal-6-node/links.csv
+--SNRM--
+
+### 109. A BASE THAT DOES NOT EXIST. Expect 404, code NOT_FOUND - the same
+# answer every other id gives, and the same answer another user's network would
+# get. Missing and not-yours are one answer everywhere in this API.
+#
+# Note that it fires on a DRY RUN too, which is deliberate: the base is resolved
+# before the file is staged, because the wizard sends one base id with every
+# file of a batch and a wrong one should be caught before the first of eight
+# commits rather than after the seventh.
+POST {{baseUrl}}/networks/import
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=SNRM
+
+--SNRM
+Content-Disposition: form-data; name="projectId"
+
+{{projectId}}
+--SNRM
+Content-Disposition: form-data; name="name"
+
+Orphan
+--SNRM
+Content-Disposition: form-data; name="baseNetworkId"
+
+999999
+--SNRM
+Content-Disposition: form-data; name="validateOnly"
+
+true
+--SNRM
+Content-Disposition: form-data; name="files"; filename="nodes.csv"
+Content-Type: text/csv
+
+< ./samples/minimal-6-node/nodes.csv
+--SNRM--
+
+### 110. `leverChanges` that is not JSON. Expect 400, code BAD_REQUEST, naming
+# the field.
+#
+# The column is a MySQL JSON column and the comparison view renders these notes
+# as real JSON, so accepting text here would move the failure to a
+# reader that can do nothing about it. Same treatment as `mapping`, and for the
+# same reason: a JSON string in a flat form field, because a browser's FormData
+# appends strings.
+POST {{baseUrl}}/networks/import
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=SNRM
+
+--SNRM
+Content-Disposition: form-data; name="projectId"
+
+{{projectId}}
+--SNRM
+Content-Disposition: form-data; name="name"
+
+Bad note
+--SNRM
+Content-Disposition: form-data; name="baseNetworkId"
+
+{{importedNetworkId}}
+--SNRM
+Content-Disposition: form-data; name="leverChanges"
+
+second supplier qualified
+--SNRM
+Content-Disposition: form-data; name="files"; filename="nodes.csv"
+Content-Type: text/csv
+
+< ./samples/minimal-6-node/nodes.csv
+--SNRM--
+
+
+###############################################################################
+# RENAMING A NETWORK THAT HAS BEEN RUN (FR-29)
+#
+# The freeze covers what a result was computed FROM: nodes, links, per-product
+# rows, the time base. What it has always meant is that a network's NAME and
+# its BASELINE FLAG are none of those. Neither is an input to any metric and
+# neither is read by any calculator, so freezing them protected nothing the rule
+# exists to protect, while making a network unnameable for the rest of its life
+# on the strength of one trial run.
+#
+# It is not a corner case. A batch import names each network after its file
+# (FR-28), so `Baseline_v3_FINAL.xlsx` becomes a row in a table that will
+# outlive the file - and deciding which configuration is the project's baseline
+# is a judgement a researcher usually reaches AFTER comparing runs.
+#
+# Requests 111-112 freeze a network so that 113-116 have something to work on.
+# If you have run 65-68c and NOT yet run 91, {{simNetworkId}} is already frozen
+# and 113-116 can point at it instead.
+###############################################################################
+
+### 111. Freeze a network: one baseline run, one replication, against the
+# imported minimal network. Expect 202 with a jobId and a runId.
+# @name renameRun
+POST {{baseUrl}}/simulations
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "networkId": {{importedNetworkId}},
+  "params": { "replications": 1, "seed": 20260808 }
+}
+
+@renameJobId = {{renameRun.response.body.$.jobId}}
+
+### 112. Poll until DONE, then confirm the freeze with the read below. Expect
+# `editable: false` - a run in QUEUED, RUNNING or DONE holds its network,
+# and this flag is derived from those rows and from nothing else.
+GET {{baseUrl}}/networks/{{importedNetworkId}}
+Authorization: Bearer {{token}}
+
+### 113. THE POINT OF FR-29. RENAME IT. Expect 200, the new name, and
+# `editable: false` - still frozen, because the rename did not release anything.
+# It was never covered.
+#
+# Send request 89's read against this network afterwards: the run that freezes
+# it is still there, still DONE, still pointing at the same nodes and links. The
+# input of that result did not change, which is the entire question the freeze
+# asks.
+PUT {{baseUrl}}/networks/{{importedNetworkId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "Dual sourcing, EU-South",
+  "baseline": false
+}
+
+### 114. THE TIME BASE OF THE SAME FROZEN NETWORK. Expect 409, code
+# NETWORK_IMMUTABLE, with networkId. This is the request that makes FR-29 a
+# carve-out rather than a hole.
+#
+# The guard came off ONE method - NetworkService.update - and off nothing else.
+# The time base is its most consequential use: results are stated in periods, so
+# redefining a period turns this run's "TTR = 3" from three days into three
+# hours without changing a stored number. The results are not wrong, they are no
+# longer comparable, and nothing about them looks different. The
+# remedy is unchanged: clone (request 26), and set the clock on the variant.
+PUT {{baseUrl}}/networks/{{importedNetworkId}}/time-base
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "periodLength": { "value": 1, "unit": "HOUR" },
+  "horizonPeriods": 240,
+  "roundingPolicy": "NEAREST"
+}
+
+### 115. A NEW NODE ON THE SAME FROZEN NETWORK. Expect 409, code
+# NETWORK_IMMUTABLE. NodeService, LinkService, ProductService's node-product
+# writes, the bulk canvas endpoints and DELETE /networks/{id} are all exactly as
+# guarded as they were - structure is structure.
+POST {{baseUrl}}/networks/{{importedNetworkId}}/nodes
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "PLANT-2",
+  "type": "PLANT",
+  "capacity": { "value": 400, "timeUnit": "DAY" }
+}
+
+### 116. THE TRAP WORTH KNOWING: name and baseline flag travel together. Expect
+# 200 - and read `baseline` in the response.
+#
+# PUT replaces both fields, so a rename that omits `baseline` CLEARS it. That is
+# why the UI edits the two as one control on the project table rather than
+# offering a rename that quietly drops a flag; it is the same "name and unit
+# value together" rule the product catalogue already states.
+#
+# Two further things to try here, both now possible and neither previously:
+#   * mark this frozen network as the project's baseline (`"baseline": true`,
+#     below) - accepted, unless another network already holds the flag, which is
+#     a 409 BASELINE_ALREADY_SET naming the incumbent;
+#   * clear the flag on a FROZEN incumbent and set it on another network. Two
+#     requests, because the check refuses a second baseline and never moves the
+#     flag for you. While update was guarded this was a dead end: the incumbent
+#     could not be cleared, so BASELINE_ALREADY_SET could never be resolved and
+#     the project's baseline stayed on whichever network happened to be run
+#     first.
+PUT {{baseUrl}}/networks/{{importedNetworkId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "Dual sourcing, EU-South",
+  "baseline": true
+}
+
+
+###############################################################################
+# CAPTIONS ON NODES AND LINKS (FR-30) — requests 117-127
+#
+# A node or a link carries a short `caption` and a `captionVisible` flag. It is
+# an attribute of the element, not a view preference: it persists, it travels in
+# all three interchange formats beside pos_x/pos_y, and it is refused on a
+# frozen network exactly like any other edit.
+#
+# THREE RULES WORTH KNOWING BEFORE YOU SEND ANYTHING
+#
+#   1. AN EMPTY CAPTION DRAWS NOTHING, whatever the flag says. So the flag is a
+#      control over annotation that exists, not a way to reserve space.
+#   2. AN OMITTED captionVisible MEANS VISIBLE. Not false. That holds on a PUT,
+#      in a spreadsheet column and in an XML attribute, and it is why V10's
+#      column is NOT NULL DEFAULT TRUE - typing a caption shows one, without a
+#      second gesture, and every pre-existing row is already correct under it.
+#   3. THE BULK PATCH CAN CLEAR A CAPTION, by sending an EMPTY STRING, and it is
+#      the only field on which it can clear anything. A caption is an ordinary
+#      edit written through the editor's debounced PATCH, and a PATCH cannot
+#      express "set to nothing"; giving `""` a meaning on this one field is
+#      how the two are reconciled. Request 120 is that.
+#
+# Requests 117-124 need the happy-path network of requests 1-14 ({{networkId}},
+# {{dcId}}, {{link1Id}}). 125-126c are the round trip and need {{projectId}}.
+# 127 needs the network requests 111-112 froze. Like the FR-28 and FR-29 blocks
+# above, this one assumes request 59 - the project teardown - has NOT been sent.
+###############################################################################
+
+### 117. Create a node WITH a caption and no flag. Expect 201, the caption back,
+# and `captionVisible: true` - rule 2. Nothing had to be ticked.
+# @name captionedNode
+POST {{baseUrl}}/networks/{{networkId}}/nodes
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "DC-9",
+  "type": "DC",
+  "capacity": { "value": 350, "timeUnit": "DAY" },
+  "posX": 520,
+  "posY": 420,
+  "caption": "Nordic hub - 3PL operated, 2 shifts"
+}
+
+
+### ---------------------------------------------------------------------------
+@captionedNodeId = {{captionedNode.response.body.$.id}}
+
+
+### 118. Caption an existing node through the BULK PATCH - the request the
+# editor's property panel actually sends when it flushes. Expect 200,
+# and note that nothing else about {{dcId}} moved: omitted means unchanged, as
+# for every other field on this DTO.
+PATCH {{baseUrl}}/networks/{{networkId}}/nodes
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "nodes": [
+    { "nodeId": {{dcId}}, "caption": "Single-sourced; 6-week qualification" }
+  ]
+}
+
+
+### 119. HIDE a caption without losing it. Expect 200, `captionVisible: false`
+# and the SAME caption text still in the response.
+#
+# This is what FR-30 exists for - "annotation can be written once and shown or
+# hidden without being lost" - and it is why the flag is a column rather than
+# the caption simply being deleted for a screenshot. The checkbox bulk-applies
+# across a multi-selection where the text does not: hiding every
+# caption at once is what preparing a figure wants, while writing one sentence
+# onto five different nodes is not.
+PATCH {{baseUrl}}/networks/{{networkId}}/nodes
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "nodes": [
+    { "nodeId": {{dcId}}, "captionVisible": false },
+    { "nodeId": {{captionedNodeId}}, "captionVisible": false }
+  ]
+}
+
+
+### 120. THE CLEARING PATH. Expect 200 and `caption: null` on {{dcId}}.
+#
+# An EMPTY STRING is a write here; null would have been "leave it alone". Send
+# `"caption": null` instead and compare the two responses - the first clears,
+# the second does nothing, and that difference is the whole of rule 3.
+#
+# Read `captionVisible` in the response too: it is still false from request 119.
+# Clearing the text does not touch the flag, and it does not need to - an empty
+# caption draws nothing either way.
+PATCH {{baseUrl}}/networks/{{networkId}}/nodes
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "nodes": [
+    { "nodeId": {{dcId}}, "caption": "" }
+  ]
+}
+
+
+### 121. A caption on a LINK, on exactly the same terms. Expect 200. A link's
+# caption is drawn under the label it already carries - its declared lead time -
+# because Cytoscape gives one label per element at one font size.
+PATCH {{baseUrl}}/networks/{{networkId}}/links
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "links": [
+    { "linkId": {{link1Id}}, "caption": "Contracted road leg, no alternative carrier" }
+  ]
+}
+
+
+### 122. 201 characters. Expect 400 with a violation naming `caption` and the
+# message "caption must be at most 200 characters". 200 is the column width of
+# V10, and it is part of the feature rather than a storage limit:
+# the caption has to sit UNDER the element's label in smaller type without
+# competing with the name, and an element is identified by its name everywhere
+# else in the tool (uq_node, the archive's ElementRef, FR-25's by-name matching).
+PATCH {{baseUrl}}/networks/{{networkId}}/nodes
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "nodes": [
+    { "nodeId": {{dcId}}, "caption": "ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" }
+  ]
+}
+
+
+### 123. THE PUT CLEARS BY OMISSION, like every other nullable field. Expect 200
+# with `caption: null` - and `captionVisible: true`, NOT false.
+#
+# That asymmetry is deliberate and is rule 2 again: a PUT replaces, so an
+# omitted caption is cleared, but an omitted FLAG is the documented default
+# rather than the primitive one. A PUT that dropped the flag to false would make
+# the next caption typed into this node invisible.
+PUT {{baseUrl}}/nodes/{{captionedNodeId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "DC-9",
+  "type": "DC",
+  "capacity": { "value": 350, "timeUnit": "DAY" },
+  "posX": 520,
+  "posY": 420
+}
+
+
+### 124. Read the network's nodes back. Expect {{dcId}} with `caption: null` and
+# `captionVisible: false`, and DC-9 with `caption: null` and
+# `captionVisible: true`. Both have no caption; they differ only in a flag
+# nothing can currently observe, which is exactly why any default is safe on a
+# row that has never been captioned - and why V10 needed no data migration.
+GET {{baseUrl}}/networks/{{networkId}}/nodes
+Authorization: Bearer {{token}}
+
+
+### 125. THE ROUND TRIP, PART 1 - import the XML sample, which now carries
+# captions three ways: DC-1 shown, PLANT-1 written-and-hidden, and SUP-1 plus
+# the PLANT-1 -> DC-1 link with a caption and NO captionVisible attribute at
+# all. Expect 201, 0 errors, 0 warnings.
+# @name importCaptionedXml
+POST {{baseUrl}}/networks/import
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=SNRM
+
+--SNRM
+Content-Disposition: form-data; name="projectId"
+
+{{projectId}}
+--SNRM
+Content-Disposition: form-data; name="name"
+
+Captioned XML
+--SNRM
+Content-Disposition: form-data; name="files"; filename="network.xml"
+Content-Type: application/xml
+
+< ./samples/xml-6-node/network.xml
+--SNRM--
+
+
+### ---------------------------------------------------------------------------
+@captionedXmlNetworkId = {{importCaptionedXml.response.body.$.networkId}}
+
+
+### 126. Confirm the omission rule survived the import. Expect SUP-1 with its
+# caption and `captionVisible: TRUE` - the attribute was absent in the file and
+# an absent flag is visible - and PLANT-1 with its caption and
+# `captionVisible: false`, which the file did state.
+GET {{baseUrl}}/networks/{{captionedXmlNetworkId}}/nodes
+Authorization: Bearer {{token}}
+
+
+### 126b. THE ROUND TRIP, PART 2 - export it again as XML. Expect 200,
+# application/xml, and every caption back. Diff it against
+# samples/xml-6-node/network.xml: the one difference is that SUP-1 and the
+# PLANT-1 -> DC-1 link now carry an explicit `captionVisible="true"` where the
+# sample omitted it. Same meaning, no longer resting on a default - the export
+# writes both halves of the pair, exactly as it writes a unit beside an
+# unconstrained capacity.
+#
+# THIS IS ALSO THE ARCHIVE. `GET /projects/{id}/archive` stores each network as
+# the bytes of this call (archive/package-info.java), so a captioned network
+# survives an archive and a restore because of this response and nothing else.
+GET {{baseUrl}}/networks/{{captionedXmlNetworkId}}/export?format=xml
+Authorization: Bearer {{token}}
+
+
+### 126c. And as a workbook. Expect 200 and an .xlsx whose `nodes` sheet ends
+# with `caption` and `caption_visible`, and whose `links` sheet does too. Open
+# it, edit a caption in Excel, and re-import it through request 44's form: the
+# round trip now carries annotation as well as layout.
+GET {{baseUrl}}/networks/{{captionedXmlNetworkId}}/export?format=xlsx
+Authorization: Bearer {{token}}
+
+
+### 127. A CAPTION ON A FROZEN NETWORK. Expect 409, code NETWORK_IMMUTABLE.
+#
+# This is the request that draws the boundary of the freeze. A caption is
+# read by no engine, exactly like the network name FR-29 exempted from the
+# guard, and the exemption was deliberately NOT extended to it. Three reasons,
+# and the third decides it: a caption sits on an element INSIDE the network, so
+# exempting it means the editor's one debounced save queue has to know which
+# fields in a batch are exempt and split the request - the guard stops being one
+# call at the top of a service and becomes per-field logic in two places. The
+# network's name cost nothing, because it is one field on one endpoint that
+# writes nothing else. And the remedy here is already one click: fork the
+# network (request 26), and annotate the variant.
+#
+# Needs the network requests 111-112 froze. The node id below is a placeholder
+# and does not need to be real: `guard.assertMutable` is the FIRST line of
+# NodeService.patchAll, before any id is resolved, so the refusal happens before
+# the batch is looked at. That ordering is itself worth seeing - the guard is
+# one call at the top of the method, which is precisely the shape an exemption
+# would have destroyed.
+PATCH {{baseUrl}}/networks/{{importedNetworkId}}/nodes
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "nodes": [
+    { "nodeId": 1, "caption": "Annotated for the paper" }
+  ]
+}

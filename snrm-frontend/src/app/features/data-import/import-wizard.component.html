@@ -1,0 +1,61 @@
+<div class="container app-view import-wizard">
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+      <li class="breadcrumb-item"><a routerLink="/projects">Projects</a></li>
+      <li class="breadcrumb-item">
+        <a [routerLink]="['/projects', projectId()]">Project #{{ projectId() }}</a>
+      </li>
+      <li class="breadcrumb-item active" aria-current="page">Import network</li>
+    </ol>
+  </nav>
+
+  <div class="mb-3">
+    @if (store.batch()) {
+      <h1 class="h3 mb-1">Import {{ store.files().length }} networks</h1>
+      <p class="text-body-secondary mb-0">
+        One network per Excel workbook, named after its file (FR-28). One column mapping and
+        one time base apply to the whole batch. Each file is validated and committed in
+        <strong>its own transaction</strong>, so the batch is not all-or-nothing: a file with a bad row
+        is refused and named while the others are imported.
+      </p>
+    } @else {
+      <h1 class="h3 mb-1">Import a network</h1>
+      <p class="text-body-secondary mb-0">
+        From the canonical CSV set, one Excel workbook, or one SNRM XML document.
+        Nothing is created until the validation report passes and you confirm - an import is
+        all-or-nothing.
+      </p>
+    }
+  </div>
+
+  <ol class="stepper list-unstyled d-flex gap-3 mb-4" aria-label="Import steps">
+    @for (step of steps(); track step; let i = $index) {
+      <li class="stepper-step" [attr.data-state]="stepState(step)" [attr.aria-current]="stepState(step) === 'current' ? 'step' : null">
+        <span class="stepper-index">{{ i + 1 }}</span>
+        <span class="stepper-label">{{ stepLabel(step) }}</span>
+      </li>
+    }
+  </ol>
+
+  @if (store.error(); as message) {
+    <div class="alert alert-danger d-flex justify-content-between align-items-start" role="alert">
+      <span>{{ message }}</span>
+      <button type="button" class="btn-close" aria-label="Dismiss" (click)="store.dismissError()"></button>
+    </div>
+  }
+
+  @switch (store.step()) {
+    @case (Step.UPLOAD) {
+      <app-upload-step />
+    }
+    @case (Step.MAPPING) {
+      <app-mapping-step />
+    }
+    @case (Step.ROLES) {
+      <app-roles-step />
+    }
+    @case (Step.REPORT) {
+      <app-report-step (imported)="onImported($event)" />
+    }
+  }
+</div>

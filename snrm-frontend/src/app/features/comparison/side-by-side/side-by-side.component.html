@@ -1,0 +1,249 @@
+<!--
+  Networks side by side (FR-25).
+
+  A grid of ⌈√n⌉ columns, one pane per network, each drawing the read-only miniature of FR-22 above
+  that network's identity and its topological suite. The panes share one by-name element selection.
+  Structural and read-only: nothing here edits, runs or deletes.
+-->
+<div class="sbs">
+  <header class="sbs__head">
+    <div class="sbs__title-row">
+      <div>
+        <h1 class="h5 mb-1">
+          Networks side by side
+          @if (store.project(); as project) {
+            <span class="text-body-secondary fw-normal">· {{ project.name }}</span>
+          }
+        </h1>
+        <!--
+          FR-25 item 6, on screen and in one line: this view answers *shape*, and the matrix answers
+          *performance*. A view that blurred the two would answer neither.
+        -->
+        <p class="sbs__purpose mb-0">
+          Structural and read-only - nothing here edits, runs or deletes. For how these
+          configurations <em>performed</em>, open the
+          <a [routerLink]="matrixLink()">metric matrix</a>: shape and numbers are two readings, and
+          this one deliberately does not answer the second.
+        </p>
+      </div>
+
+      @if (store.busy()) {
+        <span class="sbs__busy text-body-secondary small" role="status">
+          <span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>
+          Reading…
+        </span>
+      }
+    </div>
+
+    <!-- ------------------------------------------------- the shared selection (FR-25) -->
+    <div class="sbs__selection" aria-live="polite">
+      @if (selectionLabel(); as label) {
+        <span class="sbs__selected">
+          Selected {{ selectionNoun() }} <strong>{{ label }}</strong>
+        </span>
+        @if (tally(); as counts) {
+          <span
+            class="badge"
+            [class.text-bg-success]="inEveryPane()"
+            [class.text-bg-warning]="!inEveryPane()"
+            title="Counted over the panes whose structure has loaded. A pane still reading has no answer yet."
+          >
+            in {{ counts.present }} of {{ counts.of }}
+          </span>
+          @if (!inEveryPane()) {
+            <span class="sbs__difference">
+              - that is a structural difference between these configurations, which is what this
+              view is for.
+            </span>
+          }
+        }
+        <button type="button" class="btn btn-sm btn-link p-0" (click)="onCleared()">
+          Clear selection
+        </button>
+      } @else {
+        <span class="text-body-secondary">
+          Click a node or a link in any pane. The element of that <em>name</em> lights up in every
+          other pane, and a pane without one says so - names match exactly, and a node’s name is
+          unique within its network (<code>uq_node</code>). Click empty space to clear.
+        </span>
+      }
+    </div>
+
+    <div class="sbs__controls">
+      <!-- The palette, once for the window: each pane's own legend is off, since twelve copies of
+           one legend is eleven too many in a grid this tight. -->
+      <ul class="sbs__legend">
+        @for (profile of legend; track profile.type) {
+          <li class="sbs__legend-item" [title]="profile.hint">
+            <span class="sbs__swatch" [style.background]="profile.colour"></span>
+            {{ profile.label }}
+          </li>
+        }
+      </ul>
+
+      <!--
+        The one control above the grid (FR-27). Its label is the state pressing it will *produce* -
+        "Collapse all" until every pane is closed, then "Expand all" - and a mixed window reads
+        "Collapse all" so that one press always takes every pane somewhere. `collapseAllControl` is
+        that rule, pure and specced; nothing here re-derives it.
+
+        Not a toggle with `aria-pressed`: a window can be half collapsed, which is a state no
+        two-valued pressed attribute describes, and this is an action rather than a setting. Its
+        accessible name changes with the label, which is what a screen reader reads on focus.
+      -->
+      @if (panes().length && hasCollapsible()) {
+        <div class="sbs__collapse">
+          <button
+            type="button"
+            class="btn btn-sm btn-outline-secondary"
+            [title]="collapseAll().hint"
+            (click)="onCollapseAll()"
+          >
+            {{ collapseAll().label }}
+          </button>
+          <span class="sbs__collapse-note">{{ defaultNote() }}</span>
+        </div>
+      }
+    </div>
+
+    <!--
+      ------------------------------------------------- which metrics the panes print (FR-31)
+
+      A checkbox per metric, chosen once for the window: a comparison in which one pane prints a
+      figure another has hidden is not a comparison, which is why this is one set rather than one per
+      pane - the same argument the shared element selection above rests on.
+
+      A real <fieldset> with a <legend>, because these boxes are one control with several values and
+      a screen reader announces the group name before each. The boxes themselves are real checkboxes
+      with real <label>s, the discipline the dashboard's row selection already keeps.
+
+      The list is built from the codes the panes actually returned rather than from a table written
+      in the client - calculators are discovered at runtime - and ordered by the rank the
+      panes list their rows by, so the third box governs the third row. Nothing here fetches or
+      cancels anything: every pane holds its whole suite already.
+    -->
+    @if (metricChoices().length) {
+      <fieldset class="sbs__metrics">
+        <legend class="sbs__metrics-legend">Metrics shown in every pane</legend>
+
+        <ul class="sbs__metric-list">
+          @for (choice of metricChoices(); track choice.code) {
+            <li class="sbs__metric">
+              <input
+                class="form-check-input"
+                type="checkbox"
+                [id]="choice.inputId"
+                [checked]="isMetricShown(choice.code)"
+                (change)="onMetricToggled(choice.code)"
+              />
+              <label class="form-check-label" [attr.for]="choice.inputId" [title]="choice.meaning">
+                {{ choice.label }}
+              </label>
+            </li>
+          }
+        </ul>
+
+        <!--
+          Two controls where FR-27's collapse has one, and deliberately so: a window is normally all
+          collapsed or all expanded, but a filter's working state is *mixed* - five of nine ticked is
+          what using it looks like - and from there both "show me everything again" and "clear it, I
+          will pick two" should be one press. Each is disabled exactly where it would do nothing, and
+          says why. `metricVisibilityControls` is that rule, pure and specced.
+        -->
+        <div class="sbs__metric-actions">
+          <button
+            type="button"
+            class="btn btn-sm btn-outline-secondary"
+            [disabled]="metricControls().selectAll.disabled"
+            [title]="metricControls().selectAll.hint"
+            (click)="onAllMetrics(true)"
+          >
+            {{ metricControls().selectAll.label }}
+          </button>
+          <button
+            type="button"
+            class="btn btn-sm btn-outline-secondary"
+            [disabled]="metricControls().selectNone.disabled"
+            [title]="metricControls().selectNone.hint"
+            (click)="onAllMetrics(false)"
+          >
+            {{ metricControls().selectNone.label }}
+          </button>
+          <span class="sbs__metric-summary" aria-live="polite">
+            {{ metricControls().summary }}
+          </span>
+        </div>
+      </fieldset>
+    }
+  </header>
+
+  <!-- ------------------------------------------------- what the link asked for -->
+  @if (askNote(); as note) {
+    <div class="alert alert-warning py-2 px-3 small" role="alert">{{ note }}</div>
+  }
+
+  @if (store.listError(); as message) {
+    <div class="alert alert-danger d-flex justify-content-between align-items-start" role="alert">
+      <span class="small">{{ message }}</span>
+      <button type="button" class="btn btn-sm btn-outline-danger" (click)="store.reload()">
+        Try again
+      </button>
+    </div>
+  }
+
+  @if (!panes().length) {
+    <div class="alert alert-info small" role="alert">
+      This link names no networks to compare.
+      @if (asked().malformed.length) {
+        Its <code>?ids=</code> could not be read as network ids.
+      }
+      Tick two or more networks on the project dashboard and choose <strong>Compare…</strong> from
+      the actions menu. {{ capSentence }}
+    </div>
+  } @else {
+    <!--
+      The grid rule, as two custom properties: `columns = ⌈√n⌉` and the rows follow. Two
+      panes are left and right, four are a 2 × 2, three are two over one. `pane-grid.ts` is the
+      arithmetic and its spec pins every case.
+    -->
+    <div
+      class="sbs__grid"
+      [style.--sbs-columns]="grid().columns"
+      [attr.data-rows]="grid().rows"
+    >
+      @for (pane of panes(); track paneId($index, pane)) {
+        <app-network-pane
+          [pane]="pane"
+          [selection]="selection()"
+          [suiteCollapsed]="isCollapsed(pane)"
+          [hiddenMetrics]="hiddenMetrics()"
+          (picked)="onPicked($event)"
+          (cleared)="onCleared()"
+          (suiteToggled)="onSuiteToggled(pane)"
+        />
+      }
+    </div>
+  }
+
+  <footer class="sbs__foot">
+    <p class="mb-0">
+      One request per network for its structural suite, read once when the window opens
+      (<code>GET /networks/&#123;id&#125;/metrics/topological</code>) - selecting an element
+      re-reads nothing, and neither does collapsing or expanding a pane: the numbers are already
+      here, since <code>NODE_CRITICALITY</code> is one maximum-flow computation per node
+      and every pane asks for its suite whether it opened collapsed or not. {{ capSentence }}
+    </p>
+    <!--
+      FR-27: the collapse belongs to this window and is not remembered for the next one. Said on
+      screen as well as in `SideBySideStore`, because a reader who arranges twelve panes and finds them
+      reset next time is owed the reason rather than left to conclude the setting is broken.
+    -->
+    <p class="mb-0">
+      Which panes are collapsed - and which metrics are ticked above - belongs to <em>this</em>
+      window and is not stored on this device: the window is opened per comparison from the
+      dashboard, so either one carried into the next comparison - of other networks, for another
+      question - would be a preference nobody set. Unticking a metric hides it in every pane at once
+      and costs no request; each pane keeps its whole suite either way.
+    </p>
+  </footer>
+</div>

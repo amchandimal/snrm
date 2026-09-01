@@ -1,0 +1,34 @@
+.file-drop {
+  border: 2px dashed var(--bs-border-color);
+  border-radius: 0.5rem;
+  padding: 2rem 1rem;
+  text-align: center;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease-in-out,
+    background-color 0.15s ease-in-out;
+
+  &:hover:not(.disabled),
+  &:focus-visible {
+    border-color: var(--bs-primary);
+  }
+
+  &.dragging {
+    border-color: var(--bs-primary);
+    background-color: rgba(var(--bs-primary-rgb), 0.06);
+  }
+
+  &.disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+
+  code {
+    white-space: nowrap;
+  }
+}
+
+.chosen {
+  max-height: 12rem;
+  overflow-y: auto;
+}

@@ -1,0 +1,580 @@
+<!-- Results dashboard (FR-07, FR-08). -->
+<div class="container-fluid app-view px-4">
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+      <li class="breadcrumb-item"><a routerLink="/projects">Projects</a></li>
+      <li class="breadcrumb-item"><a [routerLink]="['/projects', projectId()]">Project</a></li>
+      <li class="breadcrumb-item">
+        <a [routerLink]="['/projects', projectId(), 'simulations']">Simulations</a>
+      </li>
+      <li class="breadcrumb-item active" aria-current="page">Run #{{ runId() }}</li>
+    </ol>
+  </nav>
+
+  @if (store.error(); as message) {
+    <div class="alert alert-danger d-flex justify-content-between align-items-start" role="alert">
+      <span>{{ message }}</span>
+      <button type="button" class="btn-close" aria-label="Dismiss" (click)="store.dismissError()"></button>
+    </div>
+  }
+
+  @if (exports.error(); as message) {
+    <div class="alert alert-warning d-flex justify-content-between align-items-start" role="alert">
+      <span>{{ message }}</span>
+      <button type="button" class="btn-close" aria-label="Dismiss" (click)="exports.dismissError()"></button>
+    </div>
+  }
+
+  @if (store.isLoading() && !run()) {
+    <p class="text-body-secondary">Loading run…</p>
+  }
+
+  @if (run(); as record) {
+    <!-- ------------------------------------------------------------------- header -->
+    <div class="d-flex flex-wrap align-items-baseline justify-content-between gap-3 mb-3">
+      <div>
+        <h1 class="h3 mb-1">
+          {{ record.networkName }}
+          <span class="text-body-secondary">· {{ record.scenarioName ?? 'Baseline (no scenario)' }}</span>
+          <span class="id-chip ms-2">run #{{ record.id }}</span>
+        </h1>
+        <!--
+          `record.params` is nullable and every reference to it is guarded, because the server
+          answers without it when `params_json` cannot be read back (`SimulationParams`).
+          Dereferencing it unguarded threw during the view update, which in Angular abandons the
+          rest of the parent view: the seed, the export button's label and *every* embedded block
+          below - the curve, the metric cards, the criticality table, the structural strip - went
+          blank at once, on a page whose data had loaded perfectly. That is why the guard is here
+          rather than a `?.` scattered at each site: the run either has its parameters or it says so.
+        -->
+        <p class="text-body-secondary mb-0 small">
+          <span class="badge text-bg-light">{{ record.status }}</span>
+          @if (record.params; as params) {
+            @if (isBaselineRun()) {
+              {{ params.replications }} replications - no paired set, since an undisrupted run has
+              no disruption to pair against (FR-17)
+            } @else {
+              {{ params.replications }} replications, and the same number again as the paired
+              undisrupted baseline set
+            } ·
+          }
+          horizon {{ record.horizonPeriods }} periods
+          @if (record.params; as params) {
+            · seed <span class="id-chip">{{ params.seed }}</span>
+          }
+          @if (isDeterministic()) {
+            · <span title="No demand noise and no timing jitter, so this run reproduces exactly and can be checked by hand">deterministic</span>
+          }
+          @if (record.importedAt) {
+            · <span class="badge text-bg-info">Restored from an archive</span>
+          }
+        </p>
+
+        <!--
+          Said rather than left as a gap. The parameter set *is* the reproducibility record
+          - seed, replications, engine version - so a run missing it is a run that cannot be
+          replayed, which is a finding about the run and not a rendering detail. The metrics and the
+          curves are unaffected and are shown normally: they were computed from those parameters,
+          whatever the row now fails to deserialise into.
+        -->
+        @if (record.params === null) {
+          <p class="text-body-secondary mb-0 small">
+            <span class="badge text-bg-warning">parameters unavailable</span>
+            The server could not read this run's stored parameter set, so its seed, replication
+            count and engine version are unknown here and it cannot be replayed exactly.
+            The metrics and curves below are unaffected. Check the API log for
+            <em>“Could not read params_json”</em>.
+          </p>
+        }
+      </div>
+
+      <div class="d-flex gap-2">
+        <a class="btn btn-sm btn-outline-secondary" [routerLink]="editorLink(record.networkId)">
+          Open network
+        </a>
+        <button type="button" class="btn btn-sm btn-outline-secondary" (click)="refresh()">
+          Refresh
+        </button>
+        <div class="btn-group">
+          <button
+            type="button"
+            class="btn btn-sm btn-outline-primary"
+            [disabled]="exports.busy()"
+            (click)="export('xlsx')"
+          >
+            {{ exports.busy() ? 'Exporting…' : 'Export .xlsx' }}
+          </button>
+          <button
+            type="button"
+            class="btn btn-sm btn-outline-primary"
+            [disabled]="exports.busy()"
+            (click)="export('csv')"
+            title="A zip of run, metrics and timeseries as CSV files"
+          >
+            .csv
+          </button>
+        </div>
+        <!--
+          FR-20. The dashboard is where a result is judged worth keeping, so it is where it is
+          judged not to be. Typed confirmation, and - if this is the last run holding its network
+          frozen - the network becomes editable again.
+        -->
+        <button
+          type="button"
+          class="btn btn-sm btn-outline-danger"
+          [disabled]="store.deleting()"
+          title="Delete this run and everything it produced: its metric suite and all three of its time series (FR-20)."
+          (click)="requestDeleteRun()"
+        >
+          @if (store.deleting()) {
+            <span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>
+          }
+          Delete run
+        </button>
+      </div>
+    </div>
+
+    <!--
+      Provenance of a restored run ("whose runs carry their provenance visibly").
+
+      A restored run is a genuine DONE run in every other respect - it freezes its network and it
+      seats a column in the comparison view - so without this line a number computed on another
+      machine is indistinguishable from one this installation produced. `params.engineVersion` is
+      the run's own record of which engine produced it, which is the figure that decides whether it
+      can be put beside a locally computed run at all.
+    -->
+    @if (record.importedAt) {
+      <div class="alert alert-info" role="alert">
+        <p class="fw-semibold mb-1">These numbers were computed elsewhere and restored here.</p>
+        <p class="mb-0 small">
+          Imported {{ record.importedAt | date: 'medium' }} from a project archive@if (
+            record.sourceRunId
+          ) {<span>, where it was run #{{ record.sourceRunId }}</span>}. Written by simulation engine
+          <span class="id-chip">{{ record.params?.engineVersion ?? 'unknown' }}</span>. A stored
+          parameter set replays exactly only against the engine that wrote it, so re-run before
+          comparing this against anything computed here. Deleting it destroys the only copy
+          this installation holds - the archive file itself is unaffected, and restoring it again
+          re-creates this run under a new id.
+        </p>
+      </div>
+    }
+
+    <!-- ------------------------------------------------------------ still running -->
+    @if (store.stillRunning()) {
+      <div class="alert alert-info" role="alert">
+        <div class="d-flex align-items-center justify-content-between gap-3">
+          <div class="flex-grow-1">
+            <strong>This run has not finished.</strong>
+            @if (store.job(); as job) {
+              <span class="ms-1">{{ job.message ?? job.status }} - {{ store.progressPercent() }}%</span>
+              <div class="progress mt-2" role="progressbar">
+                <div
+                  class="progress-bar progress-bar-striped progress-bar-animated"
+                  [style.width.%]="store.progressPercent()"
+                ></div>
+              </div>
+            } @else {
+              <span class="ms-1">
+                Results appear once it completes. Job progress is only available to the session that
+                submitted it, so use Refresh to check on it.
+              </span>
+            }
+          </div>
+          @if (store.job()) {
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-danger"
+              [disabled]="store.cancelling()"
+              (click)="cancel()"
+            >
+              {{ store.cancelling() ? 'Stopping…' : 'Cancel' }}
+            </button>
+          }
+        </div>
+      </div>
+    }
+
+    <!--
+      ------------------------------------------------------ the period cursor (FR-22)
+
+      Above the panels, because it governs all of them: the curve's line, the element charts' lines,
+      the figures under the curve and the miniature's tints are one period read from one signal. A
+      transport inside one panel would look like that panel's control.
+
+      Rendered only where there is a run with periods to move through - a QUEUED run has a declared
+      horizon and no series, and a scrub bar over periods that do not exist yet would be a control
+      that answers nothing.
+    -->
+    @if (hasCursor()) {
+      <div class="card mb-4 cursor-card">
+        <div class="card-body py-3">
+          <app-period-cursor />
+        </div>
+      </div>
+    }
+
+    <div class="row g-4">
+      <!--
+        ------------------------------------------------- the network inspector (FR-22)
+
+        Top-left on purpose: what the page describes is chosen here, so it is read before
+        anything it scopes. Hand-drawn SVG - Cytoscape stays out of this bundle.
+      -->
+      <div class="col-xl-4">
+        <div class="card h-100">
+          <div class="card-body">
+            <h2 class="h6 mb-1">Network</h2>
+            <p class="small text-body-secondary mb-2">
+              The network this run was computed against, frozen as it was. Click a node or a
+              link to scope the page to it; click empty space for the whole network.
+            </p>
+            <!--
+              The miniature draws *a* network and this page says which (FR-25 generalised it in
+              place, without copying the drawing). Everything below is a signal this component used
+              to reach into `RunResultsStore` and take for itself; nothing about what is rendered
+              changed. `elements` and `cursorPeriod` are separate bindings on purpose - the first
+              changes once per run and the second on every step, and the inspector's normalising
+              maxima are computed off the first alone (see its class note).
+            -->
+            <app-network-inspector
+              [nodes]="store.nodes()"
+              [links]="store.links()"
+              [structureError]="store.structureError()"
+              [loading]="store.run() !== null"
+              [selection]="store.scope()"
+              [elements]="store.elements()"
+              [cursorPeriod]="store.cursorPeriod()"
+              [note]="store.tintNote()"
+              (nodePicked)="store.selectNode($event.id)"
+              (linkPicked)="store.selectLink($event.id)"
+              (networkPicked)="store.selectNetwork()"
+            />
+          </div>
+        </div>
+      </div>
+
+      <!-- --------------------------------------- the curve, or the scoped element's charts -->
+      <div class="col-xl-8">
+        <div class="card h-100">
+          <div class="card-body">
+            <!--
+              The scope decides what this column is (FR-22). An element replaces the curve rather
+              than sitting beside it: they answer the same question - how did this behave over the
+              horizon - about two different subjects, and side by side the reader would have to work
+              out which numbers belong to which.
+            -->
+            @if (!isNetworkScope()) {
+              <app-element-charts />
+            } @else {
+              <h2 class="h6 mb-1">Performance over the horizon</h2>
+              <p class="small text-body-secondary mb-3">
+                @if (isBaselineRun()) {
+                  Fill rate per period with nothing going wrong - this run <em>is</em> the baseline
+                  (FR-17), so the two curves coincide by definition and there is no triangle to shade.
+                } @else {
+                  Fill rate per period against the undisrupted baseline every run includes. The shaded
+                  region is the resilience triangle - the area by which performance fell
+                  short.
+                }
+                <!--
+                  The other six per-period series of `RUN_TIMESERIES` are charted beside it,
+                  small, because a reader scans the set and then asks a question of one of them.
+                -->
+                Every per-period series this run recorded is charted here.
+                <strong>Double-click a chart</strong> to enlarge it, and again to put it back.
+              </p>
+
+              <!--
+                Nested rather than `hasCurve() && periodLength(); as period`: under strictTemplates an
+                `as` alias takes the whole expression's type, so the `&&` form would hand the chart a
+                `false | Duration | null` instead of the Duration it requires.
+              -->
+              @if (periodLength(); as period) {
+                @if (store.hasCurve()) {
+                  <!--
+                    ------------------------------------------------- the network scope's charts
+
+                    Seven per-period series, one grid. `cursorPeriod` is the page's one cursor
+                    (FR-22) - the same signal every chart here, the element charts and the miniature
+                    read, so all of their lines stand on one period.
+
+                    The **cell** owns the double-click, not the chart: the curve and the step charts
+                    are two components and one gesture, and putting it on the container is what keeps
+                    them from growing two implementations of it. `dblclick` is the gesture asked for;
+                    Enter and Space are here beside it because a chart a mouse can enlarge must be
+                    enlargeable without one.
+                  -->
+                  <div class="chart-grid">
+                    <div
+                      class="chart-cell"
+                      [class.chart-cell--large]="isChartExpanded(curveChart)"
+                      tabindex="0"
+                      [attr.aria-expanded]="isChartExpanded(curveChart)"
+                      [title]="chartHint(curveChart, 'the fill-rate curve')"
+                      (dblclick)="toggleChart(curveChart)"
+                      (keydown.enter)="toggleChart(curveChart)"
+                      (keydown.space)="toggleChart(curveChart)"
+                    >
+                      <span class="chart-cell__label">Fill rate</span>
+                      <app-performance-curve
+                        [points]="store.curve()"
+                        [regions]="store.lossRegions()"
+                        [periodLength]="period"
+                        [horizonPeriods]="record.horizonPeriods"
+                        [cursorPeriod]="cursorPeriod()"
+                        [size]="chartSize(curveChart)"
+                      />
+                    </div>
+
+                    @for (chart of networkChartSet(); track chart.key) {
+                      <div
+                        class="chart-cell"
+                        [class.chart-cell--large]="isChartExpanded(chart.key)"
+                        tabindex="0"
+                        [attr.aria-expanded]="isChartExpanded(chart.key)"
+                        [title]="chartHint(chart.key, chart.label)"
+                        (dblclick)="toggleChart(chart.key)"
+                        (keydown.enter)="toggleChart(chart.key)"
+                        (keydown.space)="toggleChart(chart.key)"
+                      >
+                        <app-series-chart
+                          [chart]="chart"
+                          [periodLength]="period"
+                          [cursorPeriod]="cursorPeriod()"
+                          [size]="chartSize(chart.key)"
+                        />
+                      </div>
+                    }
+                  </div>
+
+                  @if (networkChartSet().length > 0) {
+                    <p class="small text-body-secondary mt-3 mb-0">{{ noBaselineNote }}</p>
+                  }
+
+                  <!--
+                    The triangle's own footnote, kept with the charts rather than after the figures:
+                    it qualifies the shading on the fill-rate chart above, whatever size that chart is
+                    currently drawn at.
+                  -->
+                  <p class="small text-body-secondary mt-2 mb-0">
+                    @if (hasLoss()) {
+                      The shaded polygon measures
+                      <strong>{{ shadedArea() | number: '1.0-3' }} fill·periods</strong>.
+                      <!--
+                        Said plainly rather than letting two numbers disagree in silence: LOSS_AREA
+                        takes the shortfall per replication and then averages, while this curve is
+                        already an average, so the drawing is a lower bound on the metric and the two
+                        coincide only when the run is deterministic.
+                      -->
+                      The <code>LOSS_AREA</code> card may read higher: the metric takes each
+                      replication's shortfall before averaging, while this curve averages first. They
+                      agree exactly on a deterministic run.
+                    } @else {
+                      Performance never fell below the baseline - this configuration absorbed the
+                      scenario entirely, so there is no triangle to shade.
+                    }
+                  </p>
+
+                  <!--
+                    ------------------------------------ the figures, at the cursor (FR-22)
+
+                    "every per-period figure restates itself at the cursor's period". These are the
+                    seven quantities FR-19's live block prints on the editor canvas, derived by the
+                    same pure module (`network-editor/network-series.ts`) and read at this page's
+                    cursor instead of at that page's clock - one run, one derivation.
+                  -->
+                  @if (cursorFigures().length > 0) {
+                    <div class="cursor-figures mt-3">
+                      @for (figure of cursorFigures(); track figure.key) {
+                        <div class="cursor-figure" [title]="figure.hint ?? ''">
+                          <span class="cursor-figure__label">{{ figure.label }}</span>
+                          <span class="cursor-figure__value">{{ figure.value }}</span>
+                          @if (figure.hint; as hint) {
+                            <span class="cursor-figure__hint">{{ hint }}</span>
+                          }
+                        </div>
+                      }
+                    </div>
+                    <p class="small text-body-secondary mt-2 mb-0">
+                      Read at <strong>{{ store.cursorLabel() }}</strong> - the cursor above. The
+                      metric cards beside this panel are horizon figures with confidence intervals and
+                      do not move with it: a scalar over the whole run has no per-period form.
+                    </p>
+                  }
+                } @else {
+                  <p class="text-body-secondary mb-0">
+                    No time series yet. It is written when the run completes.
+                  </p>
+                }
+              } @else {
+                <p class="text-body-secondary mb-0">
+                  No time series yet. It is written when the run completes.
+                </p>
+              }
+            }
+          </div>
+        </div>
+      </div>
+
+      <!-- ------------------------------------------------------- the metric cards -->
+      <div class="col-xl-4">
+        <div class="card h-100">
+          <div class="card-body">
+            <h2 class="h6 mb-1">Simulated metrics</h2>
+            <p class="small text-body-secondary mb-3">
+              Means across replications, with 95% confidence intervals. A metric that was
+              undefined for this run produces no card rather than a zero.
+              @if (isBaselineRun()) {
+                On a baseline run that is four of the nine by definition: TTR, LOSS_AREA,
+                DISRUPTION_COST_DELTA and RESILIENCE_INDEX are measured against a disruption, and
+                nothing here was disrupted (FR-17).
+              }
+            </p>
+
+            @if (cards().length === 0) {
+              <p class="text-body-secondary mb-0">No metrics yet.</p>
+            }
+
+            <div class="metric-grid">
+              @for (card of cards(); track card.code) {
+                <div class="metric-card" [title]="card.meaning">
+                  <app-metric-badge [code]="card.code" />
+                  <!-- No `periodLength`: see the run panel's note - `readable` is the one dual form. -->
+                  <app-ci-value
+                    [value]="card.value"
+                    [ciLow]="card.ciLow"
+                    [ciHigh]="card.ciHigh"
+                    [format]="card.format"
+                    [whisker]="true"
+                  />
+                  @if (card.readable) {
+                    <!--
+                      A time-valued metric reads in both forms: the period count ties it
+                      to a column of the time series, the duration makes it mean something to a
+                      reader who does not hold this network's clock in their head.
+                    -->
+                    <p class="metric-card__readable">{{ card.readable }}</p>
+                  }
+                </div>
+              }
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ------------------------------------------------ per-node criticality -->
+      <div class="col-xl-8">
+        <div class="card">
+          <div class="card-body">
+            <h2 class="h6 mb-1">Node criticality</h2>
+            <p class="small text-body-secondary mb-3">
+              Relative drop in serviceable demand when each node is removed - a structural property
+              of the network rather than of this run, so it is exact and carries no interval.
+              Worst first. <strong>Click a row</strong> to select that node in the
+              map and read its series (FR-22).
+            </p>
+
+            @if (store.topologicalError(); as message) {
+              <div class="alert alert-warning small mb-0" role="alert">{{ message }}</div>
+            } @else if (store.criticalityRows().length === 0) {
+              <p class="text-body-secondary mb-0">No per-node values for this network.</p>
+            } @else {
+              <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                  <thead>
+                    <tr>
+                      <th scope="col">Node</th>
+                      <th scope="col" class="text-end">Criticality</th>
+                      <th scope="col" class="criticality__bar-col">Relative to the worst</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <!--
+                      One selection, two representations (FR-22): this row writes the same scope
+                      signal the miniature's dot writes, and it is marked when the page is scoped to
+                      its node. The gesture is the one the editor's network dashboard already uses
+                      for its own criticality rows.
+                    -->
+                    @for (row of store.criticalityRows(); track row.nodeId) {
+                      <tr
+                        class="criticality__row"
+                        [class.criticality__row--scoped]="isScopedNode(row)"
+                        tabindex="0"
+                        [attr.aria-current]="isScopedNode(row) ? 'true' : null"
+                        [title]="'Scope this page to ' + row.name"
+                        (click)="selectNode(row)"
+                        (keydown.enter)="selectNode(row)"
+                        (keydown.space)="selectNode(row)"
+                      >
+                        <td>{{ row.name }} <span class="id-chip">#{{ row.nodeId }}</span></td>
+                        <td class="text-end font-monospace">{{ percent(row.value) }}</td>
+                        <td>
+                          <span class="criticality__track">
+                            <span class="criticality__fill" [style.width.%]="row.share * 100"></span>
+                          </span>
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            }
+          </div>
+        </div>
+      </div>
+
+      <!--
+        --------------------------------------------- structural metrics strip
+
+        Full width since FR-22 took the top-left corner for the miniature: the strip is a grid of
+        small cards, so it reflows rather than stretching, and the alternative left a third of a row
+        empty beneath the criticality table.
+      -->
+      <div class="col-12">
+        <div class="card">
+          <div class="card-body">
+            <h2 class="h6 mb-1">Structure</h2>
+            <p class="small text-body-secondary mb-3">
+              The topological half of the suite, computed from the graph with no simulation. Exact,
+              so no intervals.
+            </p>
+            @if (structural().length === 0) {
+              <p class="text-body-secondary mb-0">Not available.</p>
+            }
+            <div class="metric-grid">
+              @for (card of structural(); track card.code) {
+                <div class="metric-card" [title]="card.meaning">
+                  <app-metric-badge [code]="card.code" />
+                  <app-ci-value [value]="card.value" [format]="card.format" />
+                </div>
+              }
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  }
+</div>
+
+<!--
+  The single-run form of the FR-20 confirmation. Same module, same wording and same typed phrase as
+  the editor's - one implementation, so the two surfaces cannot ask different questions about one
+  irreversible act (`features/network-editor/run-discard.ts`, specced).
+-->
+@if (deletePromptOpen()) {
+  @if (deleteConfirm(); as confirm) {
+    <app-confirm-dialog
+      [title]="confirm.title"
+      [message]="confirm.message"
+      [details]="confirm.details"
+      [confirmLabel]="confirm.confirmLabel"
+      cancelLabel="Keep the run"
+      [destructive]="true"
+      [busy]="store.deleting()"
+      [requiredPhrase]="confirm.requiredPhrase"
+      [phraseLabel]="confirm.phraseLabel"
+      (confirmed)="confirmDeleteRun()"
+      (cancelled)="deletePromptOpen.set(false)"
+    />
+  }
+}

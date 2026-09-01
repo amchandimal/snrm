@@ -1,0 +1,268 @@
+/*
+  The network dashboard (FR-19).
+
+  Panel chrome, not card chrome - the opposite choice from `element-inspector`, and deliberately so:
+  the inspector is a card *inside* the property panel describing a selected element, while this IS
+  the panel's content when nothing is selected. Blocks are separated by rules rather than boxed, so
+  the surface reads as one screen rather than as three widgets stacked.
+*/
+
+.dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  font-size: 0.8125rem;
+}
+
+.dashboard__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.dashboard__title {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.dashboard__tags {
+  display: flex;
+  align-items: baseline;
+  gap: 0.3125rem;
+}
+
+/* ------------------------------------------------------------------------------------ blocks */
+
+.dashboard__block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4375rem;
+  border-top: 1px solid #e9ecef;
+  padding-top: 0.5rem;
+}
+
+.dashboard__block-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.375rem;
+}
+
+.dashboard__block-title {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #495057;
+  margin: 0;
+}
+
+.dashboard__clock {
+  font-size: 0.6875rem;
+  color: #6c757d;
+  text-align: right;
+}
+
+/* The same marker the toolbar's Metrics button carries, so "out of date" reads the same in both. */
+.dashboard__stale-dot {
+  display: inline-block;
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: 50%;
+  background: #e8a33d;
+  vertical-align: middle;
+}
+
+.dashboard__sub {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: #495057;
+  margin: 0.25rem 0 0.1875rem;
+}
+
+/* -------------------------------------------------------------------------------------- rows */
+
+.dashboard__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+/* Label left, figure right; the sparkline and any hint span both columns beneath. */
+.dashboard__row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  column-gap: 0.5rem;
+}
+
+.dashboard__label {
+  font-size: 0.6875rem;
+  color: #495057;
+}
+
+.dashboard__value {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.dashboard__hint {
+  grid-column: 1 / -1;
+  font-size: 0.625rem;
+  color: #868e96;
+  line-height: 1.35;
+  margin-top: 0.0625rem;
+}
+
+/* A statement about what the data does not carry, distinguished from an ordinary hint. */
+.dashboard__hint--absent {
+  font-style: italic;
+}
+
+.dashboard__note {
+  font-size: 0.625rem;
+  color: #6c757d;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.dashboard__note--warn {
+  color: #8a6100;
+}
+
+.dashboard__inline-btn {
+  font-size: 0.625rem;
+  padding: 0;
+  vertical-align: baseline;
+}
+
+/* --------------------------------------------------------------------------------- sparkline */
+
+.dashboard__spark {
+  grid-column: 1 / -1;
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-top: 0.125rem;
+  background: #fff;
+  border: 1px solid #eef2f6;
+  border-radius: 0.1875rem;
+}
+
+.dashboard__spark-line {
+  fill: none;
+  stroke: #1c6fb8;
+  stroke-width: 1.25;
+  stroke-linejoin: round;
+}
+
+/* Wider and paler under the line, so a baseline run - where the two coincide exactly - reads as one
+   line with a halo rather than as a line that lost its overlay. Same treatment as the inspector's. */
+.dashboard__spark-baseline {
+  fill: none;
+  stroke: #adb5bd;
+  stroke-width: 2.25;
+  stroke-dasharray: 3 2;
+  stroke-linejoin: round;
+}
+
+.dashboard__spark-cursor {
+  stroke: #d6336c;
+  stroke-width: 1;
+}
+
+/* ------------------------------------------------------------------------------------- cards */
+
+.dashboard__cards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.dashboard__card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  padding: 0.375rem 0.5rem;
+  border: 1px solid #e9ecef;
+  border-radius: 0.375rem;
+  background: #fff;
+}
+
+.dashboard__card-readable {
+  font-size: 0.625rem;
+  color: #6c757d;
+  margin: 0;
+}
+
+/* -------------------------------------------------------------------------------- criticality */
+
+.dashboard__criticality {
+  display: flex;
+  flex-direction: column;
+}
+
+.dashboard__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.6875rem;
+}
+
+.dashboard__crit-row {
+  cursor: pointer;
+}
+
+.dashboard__crit-row:hover,
+.dashboard__crit-row:focus-visible {
+  background: #f1f5f9;
+  outline: none;
+}
+
+.dashboard__crit-name {
+  font-weight: 500;
+  text-align: left;
+  padding: 0.125rem 0.375rem 0.125rem 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 7.5rem;
+}
+
+.dashboard__bar-cell {
+  width: 100%;
+  padding: 0.125rem 0.375rem 0.125rem 0;
+}
+
+/* Scaled to the worst node in this network rather than to 1, following the metrics panel: a network
+   whose worst node scores 0.2 has no dominant weak point, and three near-empty bars say that far
+   less clearly than three bars whose lengths differ. */
+.dashboard__bar {
+  display: block;
+  height: 0.375rem;
+  min-width: 0.125rem;
+  border-radius: 0.1875rem;
+  background: #7aa8d4;
+}
+
+.dashboard__crit-value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  padding: 0.125rem 0;
+}
+
+/* -------------------------------------------------------------------------------------- foot */
+
+.dashboard__footer {
+  border-top: 1px solid #e9ecef;
+  padding-top: 0.5rem;
+  font-size: 0.6875rem;
+  color: #868e96;
+  margin: 0;
+}

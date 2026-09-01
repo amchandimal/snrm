@@ -1,0 +1,2 @@
+period_length_value,period_length_unit,horizon_periods,rounding_policy
+1,DAY,120,NEAREST

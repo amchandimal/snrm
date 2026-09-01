@@ -1,0 +1,62 @@
+/* The actions menu of FR-23 (a selection) and FR-26 (a row). */
+
+.network-actions {
+  display: inline-block;
+}
+
+/*
+  Bootstrap positions `.dropdown-menu.show` with Popper, which is part of the JavaScript bundle this
+  application does not load - so the menu is placed with plain CSS instead. Below and left-aligned
+  under the toggle, which is where Popper's default `bottom-start` would have put it.
+*/
+.network-actions__menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 0.125rem;
+  min-width: 15rem;
+}
+
+/*
+  The row menu is positioned against the **viewport**, not the toggle's offset parent (FR-26).
+
+  The table sits in Bootstrap's `.table-responsive`, which sets `overflow-x: auto` - and CSS
+  resolves an adjacent `overflow-y: visible` to `auto`, so that box is a scroll container and would
+  clip an absolutely positioned menu on the lower rows. `position: fixed` escapes it; the component
+  writes `top`/`bottom`/`right` from the toggle's rectangle when the menu opens, and
+  `ActionMenuRegistry` closes the menu if the page moves under it rather than re-anchoring on every
+  scroll frame.
+
+  `top`, `bottom` and `left` are unset here so the component's inline values are the only ones in
+  play - exactly one of `top`/`bottom` is written, which is what makes the flip-upward case a
+  different anchor rather than a transform.
+*/
+.network-actions__menu--anchored {
+  position: fixed;
+  top: auto;
+  left: auto;
+  margin-top: 0;
+  /* Long enough to be worth reading, short enough never to outgrow the viewport it is pinned to. */
+  max-height: min(24rem, 80vh);
+  overflow-y: auto;
+  z-index: 1050;
+}
+
+/* A disabled entry still has to be readable: it is naming a feature, not hiding one. */
+.network-actions__menu .dropdown-item:disabled {
+  opacity: 0.75;
+}
+
+/*
+  The FR-25 cap, and FR-26's "this row has no delete, and here is why". Both are sentences under (or
+  in place of) an entry, wider than the menu's labels want to be, and both are outside the roving
+  focus order - Down/Up walk the actions and nothing else, because `items()` selects buttons alone.
+*/
+.network-actions__hint {
+  max-width: 22rem;
+  margin: 0;
+  padding-top: 0;
+  font-size: 0.75rem;
+  color: #6c757d;
+  white-space: normal;
+}

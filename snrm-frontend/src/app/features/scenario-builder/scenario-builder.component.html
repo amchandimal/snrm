@@ -1,0 +1,168 @@
+<div class="container-fluid app-view builder">
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+      <li class="breadcrumb-item"><a routerLink="/projects">Projects</a></li>
+      <li class="breadcrumb-item">
+        <a [routerLink]="['/projects', projectId()]">{{ project()?.name ?? 'Project' }}</a>
+      </li>
+      <li class="breadcrumb-item"><a [routerLink]="scenarioListLink()">Scenarios</a></li>
+      <li class="breadcrumb-item active" aria-current="page">
+        {{ store.scenario()?.name ?? 'Scenario' }}
+      </li>
+    </ol>
+  </nav>
+
+  <div class="builder__head">
+    <div>
+      <h1 class="h4 mb-1">
+        {{ store.scenario()?.name ?? 'Scenario' }}
+        @if (store.scenario(); as scenario) {
+          <span class="id-chip ms-2">#{{ scenario.id }}</span>
+        }
+      </h1>
+      @if (store.scenario(); as scenario) {
+        <p class="text-body-secondary small mb-0">
+          {{ store.eventCount() }} event{{ store.eventCount() === 1 ? '' : 's' }} ·
+          {{ scenario.numReplications }} replications ·
+          @if (scenario.seed === null) {
+            seed drawn per run
+          } @else {
+            seed {{ scenario.seed }}
+          }
+        </p>
+      }
+    </div>
+
+    <!-- The picker. A scenario names no network; the timeline needs one to have a clock. -->
+    <div class="builder__network">
+      <label class="builder__network-label" for="builder-network">Laid against</label>
+      <select
+        id="builder-network"
+        class="form-select form-select-sm"
+        [disabled]="networks.isLoading()"
+        [value]="selectedNetworkText()"
+        (change)="onNetworkPicked($any($event.target).value)"
+      >
+        <option value="" disabled>Pick a network…</option>
+        @for (network of networkOptions(); track network.id) {
+          <option [value]="network.id.toString()">
+            {{ network.name }} · v{{ network.version }}{{ network.baseline ? ' · baseline' : '' }}
+          </option>
+        }
+      </select>
+      @if (store.network(); as network) {
+        <span class="builder__network-note">
+          {{ clockLabel(network) }} ·
+          <a [routerLink]="editorLink(network)">open in editor</a>
+        </span>
+      }
+    </div>
+  </div>
+
+  <p class="builder__note">
+    Bars are <strong>positioned</strong> by converting each event's declared durations onto this
+    network's clock, and <strong>labelled</strong> with the units they were entered in.
+    Switching network above re-lays the same scenario against a different period - the bars move, the
+    events do not change.
+  </p>
+
+  @if (pageError(); as message) {
+    <div class="alert alert-danger" role="alert">{{ message }}</div>
+  }
+
+  @if (store.error(); as message) {
+    <div class="alert alert-danger d-flex justify-content-between align-items-start" role="alert">
+      <span>{{ message }}</span>
+      <button type="button" class="btn-close" aria-label="Dismiss" (click)="store.dismissError()"></button>
+    </div>
+  }
+
+  @if (store.barsPastHorizon() > 0) {
+    <div class="alert alert-warning py-2 small" role="alert">
+      {{ store.barsPastHorizon() }} event{{ store.barsPastHorizon() === 1 ? '' : 's' }} end after this
+      network's horizon. Their recovery is never observed, so any metric over them measures the
+      truncation. Extend the horizon in the network editor's time settings, or shorten
+      the events.
+    </div>
+  }
+
+  @if (store.unresolvedTargets() > 0) {
+    <div class="alert alert-warning py-2 small" role="alert">
+      {{ store.unresolvedTargets() }} target{{ store.unresolvedTargets() === 1 ? '' : 's' }} in this
+      scenario are not in the selected network. That is legitimate - a scenario belongs to the project
+      and outlives the network its events were written against - but an edit saved against
+      this network would be refused.
+    </div>
+  }
+
+  @if (store.isLoading()) {
+    <p class="text-body-secondary">Loading the scenario…</p>
+  } @else if (!store.ready()) {
+    <div class="card shadow-sm">
+      <div class="card-body text-center py-5">
+        <p class="mb-1">Pick a network to lay this scenario's timeline against.</p>
+        <p class="text-body-secondary small mb-0">
+          The events belong to the scenario; the clock they are drawn on belongs to a network.
+        </p>
+      </div>
+    </div>
+  } @else {
+    <div class="builder__grid" [class.builder__grid--with-editor]="editorOpen()">
+      <div class="builder__chart">
+        <div class="builder__toolbar">
+          <button
+            type="button"
+            class="btn btn-sm btn-primary"
+            [disabled]="store.saving()"
+            (click)="openNew()"
+          >
+            Add event
+          </button>
+          <span class="builder__toolbar-note">
+            Click a bar to edit its target, timing, severity, recovery profile and probability.
+          </span>
+        </div>
+
+        <app-event-timeline
+          [rows]="store.rows()"
+          [network]="store.network()!"
+          [selectedEventId]="selectedEventId()"
+          (barSelected)="openEvent($event)"
+          (addRequested)="openNew()"
+        />
+      </div>
+
+      @if (editorOpen()) {
+        <aside class="builder__panel">
+          <app-event-editor
+            [event]="editingEvent()"
+            [network]="store.network()!"
+            [nodes]="store.nodes()"
+            [links]="store.links()"
+            [regions]="store.regions()"
+            [busy]="store.saving()"
+            [error]="store.error()"
+            (saved)="saveEvent($event)"
+            (deleted)="askDeleteEvent($event)"
+            (cancelled)="closeEditor()"
+          />
+        </aside>
+      }
+    </div>
+  }
+</div>
+
+@if (pendingDeleteEvent(); as event) {
+  <app-confirm-dialog
+    title="Delete this event?"
+    [message]="
+      'Delete the ' + event.targetType.toLowerCase() + ' event starting after ' + event.startOffset.value + ' ' + event.startOffset.unit.toLowerCase() + '.'
+    "
+    [details]="deleteEventDetails"
+    confirmLabel="Delete event"
+    [destructive]="true"
+    [busy]="store.deletingEvent() !== null"
+    (confirmed)="confirmDeleteEvent()"
+    (cancelled)="cancelDeleteEvent()"
+  />
+}

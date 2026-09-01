@@ -1,0 +1,213 @@
+<!--
+  The network dashboard (FR-19).
+
+  The property panel's `none` branch. Clicking empty canvas - or pressing Escape - already lands
+  here; nothing on this surface adds a gesture, and the only thing it writes is the selection, when
+  a criticality row is clicked. See the component note.
+-->
+<section class="dashboard" aria-label="Network dashboard">
+  <header class="dashboard__header">
+    <h3 class="dashboard__title">{{ title() }}</h3>
+    <span class="dashboard__tags">
+      @if (version(); as tag) {
+        <span class="id-chip">{{ tag }}</span>
+      }
+      @if (frozen()) {
+        <span
+          class="badge text-bg-secondary"
+          title="A simulation run has frozen this network. Its structure is the exact input of every result computed against it; fork a variant to edit it."
+        >
+          Frozen
+        </span>
+      }
+    </span>
+  </header>
+
+  <!-- ====================================================================== live (FR-18/19) -->
+  @if (liveVisible() && liveRows().length) {
+    <section class="dashboard__block" aria-label="Live playback figures">
+      <div class="dashboard__block-head">
+        <h4 class="dashboard__block-title">Live</h4>
+        <span class="dashboard__clock">{{ clock() }}</span>
+      </div>
+
+      <div class="dashboard__rows">
+        @for (row of liveRows(); track row.key) {
+          <div class="dashboard__row">
+            <span class="dashboard__label">{{ row.label }}</span>
+            <span class="dashboard__value">{{ row.value }}</span>
+
+            @if (!row.spark.empty) {
+              <svg
+                class="dashboard__spark"
+                [attr.viewBox]="viewBox"
+                role="img"
+                [attr.aria-label]="row.label + ' over the run'"
+              >
+                <!-- Baseline first, so where the two coincide the disrupted line is the one on
+                     top - the same layering the element inspector uses. -->
+                @for (path of row.spark.baselinePaths; track $index) {
+                  <path class="dashboard__spark-baseline" [attr.d]="path" />
+                }
+                @for (path of row.spark.paths; track $index) {
+                  <path class="dashboard__spark-line" [attr.d]="path" />
+                }
+                @if (cursorAt() !== null) {
+                  <line
+                    class="dashboard__spark-cursor"
+                    [attr.x1]="cursorAt()"
+                    [attr.x2]="cursorAt()"
+                    [attr.y1]="plotTop()"
+                    [attr.y2]="plotBottom()"
+                  />
+                }
+              </svg>
+            }
+
+            @if (row.hint) {
+              <span class="dashboard__hint">{{ row.hint }}</span>
+            }
+            @if (!row.hasBaseline) {
+              <span class="dashboard__hint dashboard__hint--absent">
+                No baseline overlay: the run's per-period table carries no undisrupted twin for this
+                column. The comparison is the AVG_INVENTORY / AVG_PIPELINE cards below.
+              </span>
+            }
+          </div>
+        }
+      </div>
+
+      <p class="dashboard__note">
+        Read at the playback clock. Stepwise, never interpolated - the engine is discrete-time, so a
+        value between two periods is one no replication produced.
+      </p>
+    </section>
+  }
+
+  <!-- ======================================================================= the run's suite -->
+  @if (hasReport()) {
+    <section class="dashboard__block" aria-label="Metric suite of the loaded run">
+      <div class="dashboard__block-head">
+        <h4 class="dashboard__block-title">Run suite</h4>
+        @if (reportRun(); as run) {
+          <span class="dashboard__clock">
+            {{ runLabel() ?? 'Run' }} · run #{{ run.id }}
+          </span>
+        }
+      </div>
+
+      @if (suiteCards().length) {
+        <div class="dashboard__cards">
+          @for (card of suiteCards(); track card.code) {
+            <div class="dashboard__card" [title]="card.meaning">
+              <app-metric-badge [code]="card.code" />
+              <!-- No `periodLength`: see the run panel's note - `readable` is the one dual form. -->
+              <app-ci-value
+                [value]="card.value"
+                [ciLow]="card.ciLow"
+                [ciHigh]="card.ciHigh"
+                [format]="card.format"
+              />
+              @if (card.readable) {
+                <p class="dashboard__card-readable">{{ card.readable }}</p>
+              }
+            </div>
+          }
+        </div>
+      } @else {
+        <p class="dashboard__note">
+          This run has no metric rows yet - it is still executing, or it did not complete.
+        </p>
+      }
+
+      @if (reportIsBaseline()) {
+        <p class="dashboard__note">
+          TTR, LOSS_AREA, DISRUPTION_COST_DELTA and RESILIENCE_INDEX are <strong>absent</strong> -
+          they are measured against a disruption, and nothing here was disrupted. Absent is
+          unmeasured, never zero. AVG_INVENTORY and AVG_PIPELINE are on the other side of that line:
+          they describe what the network held, which a run with no scenario answers as well as any
+          other.
+        </p>
+      }
+    </section>
+  }
+
+  <!-- ================================================== structure, run or no run -->
+  <section class="dashboard__block" aria-label="Structural metrics">
+    <div class="dashboard__block-head">
+      <h4 class="dashboard__block-title">Structure</h4>
+      <span class="dashboard__clock" aria-live="polite">
+        @if (topology.isLoading()) {
+          <span class="dashboard__stale-dot" aria-hidden="true"></span> computing…
+        } @else if (structureStale()) {
+          <span class="dashboard__stale-dot" aria-hidden="true"></span> out of date
+        }
+      </span>
+    </div>
+
+    @if (topology.error(); as message) {
+      <p class="dashboard__note dashboard__note--warn">{{ message }}</p>
+    }
+
+    @if (structureEmpty()) {
+      <p class="dashboard__note">
+        The structural suite has not been computed for this network yet.
+        <button type="button" class="btn btn-sm btn-link dashboard__inline-btn" (click)="recomputeStructure()">
+          Compute it
+        </button>
+        - it needs no run: these metrics are functions of the graph.
+      </p>
+    }
+
+    @if (structureRows().length) {
+      <div class="dashboard__rows">
+        @for (row of structureRows(); track row.code) {
+          <div class="dashboard__row" [title]="row.meaning">
+            <span class="dashboard__label">{{ row.label }}</span>
+            <span class="dashboard__value">{{ row.value }}</span>
+          </div>
+        }
+      </div>
+    }
+
+    @if (topCriticality().length) {
+      <div class="dashboard__criticality">
+        <p class="dashboard__sub">Most critical nodes</p>
+        <table class="dashboard__table">
+          <tbody>
+            @for (row of topCriticality(); track row.nodeId) {
+              <tr
+                class="dashboard__crit-row"
+                tabindex="0"
+                [title]="'Select ' + row.name + ' on the canvas'"
+                (click)="select(row)"
+                (keydown.enter)="select(row)"
+                (keydown.space)="select(row)"
+              >
+                <th scope="row" class="dashboard__crit-name">{{ row.name }}</th>
+                <td class="dashboard__bar-cell">
+                  <span class="dashboard__bar" [style.width.%]="row.share * 100" aria-hidden="true"></span>
+                </td>
+                <td class="dashboard__crit-value">{{ percent(row.value) }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+        <p class="dashboard__hint">
+          Share of serviceable demand the network loses if this node goes. Click a row to select it.
+          @if (moreCriticality(); as more) {
+            {{ more }} more in the Metrics panel.
+          }
+        </p>
+      </div>
+    }
+  </section>
+
+  <!--
+    The old empty-selection sentence, kept as one line at the bottom. The panel's answer to "what is
+    selected?" is now *the network*, and this says how to get back to a part of it.
+  -->
+  <p class="dashboard__footer">
+    Nothing selected - click an element to inspect it; this view is the network.
+  </p>
+</section>

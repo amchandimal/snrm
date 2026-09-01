@@ -1,0 +1,28 @@
+<div class="palette" [class.palette--disabled]="disabled()">
+  <h2 class="palette__title">Node types</h2>
+  <p class="palette__hint">
+    Drag a tile onto the canvas, or double-click empty canvas to place the highlighted type.
+  </p>
+
+  @for (profile of profiles; track profile.type) {
+    <button
+      type="button"
+      class="palette__tile"
+      [class.palette__tile--active]="profile.type === lastUsedType()"
+      [attr.draggable]="disabled() ? 'false' : 'true'"
+      [disabled]="disabled()"
+      [style.--tile-colour]="profile.colour"
+      [style.--tile-accent]="profile.accent"
+      [title]="profile.hint"
+      [attr.aria-pressed]="profile.type === lastUsedType()"
+      (dragstart)="onDragStart($event, profile)"
+      (click)="onSelect(profile)"
+    >
+      <span class="palette__swatch" [class]="'palette__swatch--' + profile.type" aria-hidden="true"></span>
+      <span class="palette__label">
+        <span class="palette__name">{{ profile.label }}</span>
+        <span class="palette__type">{{ profile.type }}</span>
+      </span>
+    </button>
+  }
+</div>

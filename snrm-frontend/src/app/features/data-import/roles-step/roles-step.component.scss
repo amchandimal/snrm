@@ -1,0 +1,11 @@
+.roles {
+  code {
+    white-space: nowrap;
+  }
+
+  // The radio is the whole cell's target: at four columns the column is narrow, and a 16px circle
+  // centred in it is a hard thing to hit.
+  td .form-check-input[type='radio'] {
+    cursor: pointer;
+  }
+}

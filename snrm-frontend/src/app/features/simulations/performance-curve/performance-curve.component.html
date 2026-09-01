@@ -1,0 +1,98 @@
+<!--
+  Fill rate vs period, baseline overlaid, loss area shaded - the resilience triangle drawn literally.
+-->
+@if (isEmpty()) {
+  <p class="text-body-secondary mb-0">No curve yet - this run has not produced its time series.</p>
+} @else {
+  <figure class="curve mb-0" [class.curve--large]="isLarge()">
+    <svg
+      class="curve__svg"
+      [attr.viewBox]="viewBox()"
+      role="img"
+      [attr.aria-label]="
+        'Fill rate against period. The disrupted run against its undisrupted baseline; the shaded ' +
+        'region between them is the resilience triangle.'
+      "
+    >
+      <!-- Gridlines and the fill-rate axis. -->
+      <g class="curve__grid">
+        @for (tick of yTicks(); track tick.fill) {
+          <line [attr.x1]="box().left" [attr.x2]="plotRight()" [attr.y1]="tick.y" [attr.y2]="tick.y" />
+          <text class="curve__tick" [attr.x]="box().left - 8" [attr.y]="tick.y + 4">
+            {{ tick.label }}
+          </text>
+        }
+      </g>
+
+      <!--
+        The shaded loss area, drawn under the curves so both outlines stay legible over it. One
+        polygon per contiguous shortfall: a run that recovers and relapses gets two, which is the
+        truthful drawing of two separate losses rather than one region spanning the recovery.
+      -->
+      <g class="curve__loss">
+        @for (path of regionPaths(); track $index) {
+          <path [attr.d]="path" />
+        }
+      </g>
+
+      <!-- The undisrupted baseline set every run includes. Dashed: it is the comparator. -->
+      <path class="curve__baseline" [attr.d]="baselinePath()" />
+      <path class="curve__disrupted" [attr.d]="disruptedPath()" />
+
+      @if (onset(); as marker) {
+        <g class="curve__onset">
+          <line
+            [attr.x1]="marker.x"
+            [attr.x2]="marker.x"
+            [attr.y1]="box().top"
+            [attr.y2]="plotBottom()"
+          />
+          <title>{{ onsetLabel() }}</title>
+        </g>
+      }
+
+      <!--
+        The page's shared period cursor (FR-22) - drawn last so it sits over both curves and
+        over the onset marker, because it is the thing the reader is moving. Absent in the editor's
+        run panel, which binds no cursor: see the component note.
+      -->
+      @if (cursorAt() !== null) {
+        <line
+          class="curve__cursor"
+          [attr.x1]="cursorAt()"
+          [attr.x2]="cursorAt()"
+          [attr.y1]="box().top"
+          [attr.y2]="plotBottom()"
+        />
+      }
+
+      <!-- The period axis. Ticks are whole periods; the title names what a period is. -->
+      <g class="curve__axis">
+        <line
+          [attr.x1]="box().left"
+          [attr.x2]="plotRight()"
+          [attr.y1]="plotBottom()"
+          [attr.y2]="plotBottom()"
+        />
+        @for (tick of xTicks(); track tick.period) {
+          <text class="curve__tick" [attr.x]="tick.x" [attr.y]="plotBottom() + 16">
+            {{ tick.period }}
+          </text>
+        }
+        <text
+          class="curve__axis-label"
+          [attr.x]="(box().left + plotRight()) / 2"
+          [attr.y]="box().height - 8"
+        >
+          {{ axisLabel() }}
+        </text>
+      </g>
+    </svg>
+
+    <figcaption class="curve__legend">
+      <span class="curve__key curve__key--disrupted">Disrupted run</span>
+      <span class="curve__key curve__key--baseline">Undisrupted baseline</span>
+      <span class="curve__key curve__key--loss">Loss area (resilience triangle)</span>
+    </figcaption>
+  </figure>
+}

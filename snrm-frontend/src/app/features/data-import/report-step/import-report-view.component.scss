@@ -1,0 +1,19 @@
+// Moved here with the tables it styles when FR-28 made the report renderable more than once per
+// screen. Component-scoped, so a batch drawing four of these draws four identically styled reports.
+.diagnostics {
+  th.line,
+  td.line {
+    width: 4.5rem;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  th.code,
+  td.code {
+    width: 14rem;
+  }
+
+  code {
+    white-space: nowrap;
+  }
+}

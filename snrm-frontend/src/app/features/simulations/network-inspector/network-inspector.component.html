@@ -1,0 +1,237 @@
+<!--
+  The network inspector - a read-only miniature of *a* network (FR-22, FR-25).
+
+  Hand-drawn SVG: Cytoscape stays out of this bundle. Every node and every arc is a click target, and
+  the background is the fourth one - clicking it is how the dashboard returns to the network scope
+  and how a side-by-side pane drops the shared by-name selection.
+
+  Where there is a run behind it, the picture is also **tinted at the cursor's period**: a node's own
+  fill and every element's lost availability, both through `period-cursor.cursorTints` and so through
+  the canvas's own arithmetic. There is no clock here - a step of the cursor recomputes two numbers
+  per element and Angular writes the attributes that changed (see the component note). A caller with
+  no series passes none, and every dot draws plain.
+-->
+<div class="inspector">
+  @if (structureError(); as message) {
+    <p class="inspector__note inspector__note--warn">{{ message }}</p>
+  } @else if (stillReading()) {
+    <p class="inspector__note">{{ loadingLabel() }}</p>
+  } @else if (empty()) {
+    <p class="inspector__note">This network has no nodes to draw.</p>
+  } @else {
+    <svg
+      class="inspector__svg"
+      [attr.viewBox]="viewBox"
+      role="group"
+      aria-label="Miniature of the network. Select a node or a link to scope to it."
+    >
+      <!--
+        One clip per tinted node, and the only thing that moves in it is the rect's `y`: the band
+        below it is the node's stock. A gradient would be the canvas's own drawing, but Cytoscape
+        writes gradient stops as a string and SVG writes a clip - the *arithmetic* is what the two
+        surfaces share (`fillLevel`), not the styling.
+      -->
+      <defs>
+        @for (painted of paintedNodes(); track painted.node.id) {
+          @if (painted.tinted) {
+            <clipPath [attr.id]="painted.clipId">
+              <rect
+                x="0"
+                [attr.y]="painted.gaugeTop"
+                [attr.width]="box.width"
+                [attr.height]="box.height"
+              />
+            </clipPath>
+          }
+        }
+      </defs>
+
+      <!--
+        Empty space, and it is a control. First child so every element sits above it; a plain
+        `fill: transparent` rather than `none`, because `none` is not a pointer target.
+      -->
+      <rect
+        class="inspector__space"
+        x="0"
+        y="0"
+        [attr.width]="box.width"
+        [attr.height]="box.height"
+        tabindex="0"
+        role="button"
+        aria-label="Show the whole network"
+        (click)="selectNetwork()"
+        (keydown.enter)="selectNetwork()"
+        (keydown.space)="selectNetwork()"
+      />
+
+      <!-- ------------------------------------------------------------------- the arcs -->
+      @for (painted of paintedLinks(); track painted.link.id) {
+        <g
+          class="inspector__link"
+          [class.inspector__link--selected]="isLinkSelected(painted.link.id)"
+          tabindex="0"
+          role="button"
+          [attr.aria-label]="'Link ' + painted.link.label"
+          (click)="selectLink(painted.link)"
+          (keydown.enter)="selectLink(painted.link)"
+          (keydown.space)="selectLink(painted.link)"
+        >
+          <title>{{ painted.link.label }}</title>
+          <!--
+            A 1.5-unit line is not a click target. This invisible one is, and it is drawn first so the
+            visible stroke stays exactly as thin as it looks.
+          -->
+          <line
+            class="inspector__link-hit"
+            [attr.x1]="painted.link.x1"
+            [attr.y1]="painted.link.y1"
+            [attr.x2]="painted.link.x2"
+            [attr.y2]="painted.link.y2"
+          />
+          <!--
+            The availability halo of this period (FR-16's channel, FR-18's temporal reading of it),
+            under the arc rather than over it: an overlay would take a bite out of the line it is
+            about. Not drawn at all at full availability - 0 is *no halo*, not a transparent one.
+          -->
+          @if (painted.halo > 0) {
+            <line
+              class="inspector__halo-line"
+              [attr.x1]="painted.link.x1"
+              [attr.y1]="painted.link.y1"
+              [attr.x2]="painted.link.x2"
+              [attr.y2]="painted.link.y2"
+              [attr.opacity]="painted.halo"
+            />
+          }
+          <line
+            class="inspector__link-line"
+            [attr.x1]="painted.link.x1"
+            [attr.y1]="painted.link.y1"
+            [attr.x2]="painted.link.x2"
+            [attr.y2]="painted.link.y2"
+            [attr.opacity]="painted.paint"
+          />
+          <!-- Direction is drawn, not implied: the arcs are directed (see `mini-map-layout`). -->
+          @if (painted.link.arrow; as points) {
+            <polygon
+              class="inspector__arrow"
+              [attr.points]="points"
+              [attr.opacity]="painted.paint"
+            />
+          }
+        </g>
+      }
+
+      <!-- ------------------------------------------------------------------ the nodes -->
+      @for (painted of paintedNodes(); track painted.node.id) {
+        <g
+          class="inspector__node"
+          [class.inspector__node--selected]="isNodeSelected(painted.node.id)"
+          tabindex="0"
+          role="button"
+          [attr.aria-label]="title(painted.node)"
+          (click)="selectNode(painted.node)"
+          (keydown.enter)="selectNode(painted.node)"
+          (keydown.space)="selectNode(painted.node)"
+        >
+          <title>{{ title(painted.node) }}</title>
+          @if (painted.halo > 0) {
+            <!-- Lost availability, as the canvas's underlay. Behind everything on this node. -->
+            <circle
+              class="inspector__halo"
+              [attr.cx]="painted.node.x"
+              [attr.cy]="painted.node.y"
+              [attr.r]="box.nodeRadius + 5"
+              [attr.opacity]="painted.halo"
+            />
+          }
+          @if (isNodeSelected(painted.node.id)) {
+            <!-- The selection ring, outside the dot so it never eats into the type colour. -->
+            <circle
+              class="inspector__ring"
+              [attr.cx]="painted.node.x"
+              [attr.cy]="painted.node.y"
+              [attr.r]="box.nodeRadius + 3"
+            />
+          }
+          <circle
+            class="inspector__dot"
+            [attr.cx]="painted.node.x"
+            [attr.cy]="painted.node.y"
+            [attr.r]="box.nodeRadius"
+            [attr.fill]="painted.node.colour"
+            [attr.stroke]="painted.node.accent"
+            [attr.opacity]="painted.paint"
+          />
+          @if (painted.tinted) {
+            <!--
+              The gauge: this node's own accent - already the darkened form of its type colour
+              (`echelon-rules`) - clipped to the band below the fill line. **The hue stays the type**,
+              so the echelon is still readable while the stock moves, which is exactly what
+              `playback-channels.gaugeColours` argues for the canvas.
+            -->
+            <circle
+              class="inspector__gauge"
+              [attr.cx]="painted.node.x"
+              [attr.cy]="painted.node.y"
+              [attr.r]="box.nodeRadius"
+              [attr.fill]="painted.node.accent"
+              [attr.clip-path]="'url(#' + painted.clipId + ')'"
+              [attr.opacity]="painted.paint"
+            />
+          }
+          @if (showLabels()) {
+            <text
+              class="inspector__label"
+              [attr.x]="painted.node.x"
+              [attr.y]="painted.node.y - box.nodeRadius - 4"
+            >
+              {{ painted.node.name }}
+            </text>
+          }
+        </g>
+      }
+    </svg>
+
+    <!--
+      The palette itself, so the legend and the dots cannot drift (`echelon-rules.ts`). Off in a
+      side-by-side pane, where twelve copies of one legend would be eleven too many and the window
+      prints it once above the grid.
+    -->
+    @if (showLegend()) {
+      <ul class="inspector__legend">
+        @for (profile of legend; track profile.type) {
+          <li class="inspector__legend-item" [title]="profile.hint">
+            <span class="inspector__swatch" [style.background]="profile.colour"></span>
+            {{ profile.label }}
+          </li>
+        }
+      </ul>
+    }
+
+    <!--
+      What the tint is, or why there is none - the caller's sentence, because every version of it is
+      a statement about a run (FR-22, item 7). A miniature with no run behind it passes none.
+    -->
+    @if (note(); as sentence) {
+      <p class="inspector__note">{{ sentence }}</p>
+    }
+
+    @if (arrangementNote(); as sentence) {
+      <p class="inspector__note">{{ sentence }}</p>
+    }
+
+    @if (showSelectionLine()) {
+      <p class="inspector__scope">
+        @if (selectionLabel(); as label) {
+          Scoped to <strong>{{ label }}</strong> -
+          <button type="button" class="btn btn-link btn-sm inspector__reset" (click)="selectNetwork()">
+            show the whole network
+          </button>
+        } @else {
+          Showing the <strong>whole network</strong>. Select a node or a link to read its series.
+        }
+      </p>
+    }
+  }
+</div>

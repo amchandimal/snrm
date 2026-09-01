@@ -1,0 +1,202 @@
+@if (outcomes(); as batchFiles) {
+  <!-- ------------------------------------------------ a batch: one report per file (FR-28) -->
+  @if (summary(); as summary) {
+    <div class="card shadow-sm mb-3">
+      <div class="card-body">
+        <h2 class="h5 mb-3">4. Import report</h2>
+
+        <div
+          class="alert mb-3"
+          [class.alert-info]="summary.tone === 'info'"
+          [class.alert-success]="summary.tone === 'success'"
+          [class.alert-warning]="summary.tone === 'warning'"
+          [class.alert-danger]="summary.tone === 'danger'"
+          role="alert"
+          aria-live="polite"
+        >
+          <strong>{{ summary.title }}</strong>
+          <span class="d-block mt-1">{{ summary.message }}</span>
+        </div>
+
+        <dl class="row small mb-0">
+          <dt class="col-sm-3">Outcome</dt>
+          <dd class="col-sm-9 mb-0">
+            <span class="badge text-bg-success me-1">{{ summary.created }} created</span>
+            <span class="badge text-bg-danger me-1">{{ summary.refused }} refused</span>
+            <span class="badge text-bg-secondary me-1">{{ summary.notAttempted }} not attempted</span>
+            @if (summary.pending) {
+              <span class="badge text-bg-light border">{{ summary.pending }} waiting</span>
+            }
+          </dd>
+        </dl>
+      </div>
+    </div>
+  }
+
+  <p class="text-body-secondary small">
+    In the order the files were imported - the baseline first, because a variant edge needs its base
+    network’s id. Files that could not be named are at the end.
+  </p>
+
+  @for (outcome of batchFiles; track outcome.fileName + $index) {
+    <section class="card shadow-sm mb-3 batch-file" [attr.data-status]="outcome.status">
+      <header class="card-header d-flex flex-wrap justify-content-between align-items-baseline gap-2">
+        <span class="text-break"><code>{{ outcome.fileName }}</code></span>
+        <span
+          class="badge"
+          [class.text-bg-success]="outcome.status === Status.CREATED"
+          [class.text-bg-danger]="outcome.status === Status.REFUSED"
+          [class.text-bg-secondary]="outcome.status === Status.NOT_ATTEMPTED"
+          [class.text-bg-light]="outcome.status === Status.PENDING"
+          >{{ statusLabel(outcome.status) }}</span
+        >
+      </header>
+      <div class="card-body">
+        <p class="mb-2">
+          @switch (outcome.status) {
+            @case (Status.CREATED) {
+              <strong>{{ createdLabel(outcome) }}</strong>
+              <span class="d-block text-body-secondary small">
+                {{ roleLabel(outcome) }}.
+                @if (outcome.role === Role.VARIANT) {
+                  It is recorded as a <code>CONFIGURATION_VARIANT</code> of the baseline, so it appears
+                  under it in the lineage beneath the project’s network table.
+                }
+              </span>
+              @if (outcome.network; as network) {
+                <a
+                  class="btn btn-sm btn-outline-secondary mt-2"
+                  [routerLink]="['/projects', store.projectId(), 'networks', network.id, 'editor']"
+                  >Open in editor</a
+                >
+              }
+            }
+            @case (Status.PENDING) {
+              <span class="text-body-secondary">
+                <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+                Waiting - one request per file, in this order.
+              </span>
+            }
+            @default {
+              <span class="text-body-secondary small">
+                Would have been imported as
+                <strong>{{ outcome.name ?? '-' }}</strong> · {{ roleLabel(outcome) }}.
+              </span>
+            }
+          }
+        </p>
+
+        @if (outcome.message; as message) {
+          <div
+            class="alert py-2 small mb-0"
+            [class.alert-danger]="outcome.status === Status.REFUSED"
+            [class.alert-secondary]="outcome.status !== Status.REFUSED"
+            role="alert"
+          >
+            {{ message }}
+          </div>
+        }
+
+        @if (outcome.report; as report) {
+          <!-- Refused files open: the rows are the remedy. Created ones fold away - the file worked,
+               and its warnings are there for the reader who wants them. -->
+          <details class="mt-2" [open]="outcome.status === Status.REFUSED">
+            <summary class="small text-body-secondary">
+              Validation report for this file - {{ report.errorCount }} error(s),
+              {{ report.warningCount }} warning(s)
+            </summary>
+            <div class="mt-2">
+              <app-import-report-view [report]="report" [title]="null" />
+            </div>
+          </details>
+        }
+      </div>
+    </section>
+  }
+
+  <div class="d-flex justify-content-between gap-2 mb-4">
+    <button
+      type="button"
+      class="btn btn-outline-secondary"
+      [disabled]="!canGoBackToRoles()"
+      [title]="
+        canGoBackToRoles()
+          ? 'Nothing was created, so the roles can be changed and the batch run again'
+          : 'Networks were created. Fix the named files and import those files again rather than the batch'
+      "
+      (click)="store.backToRoles()"
+    >
+      Back to roles
+    </button>
+    <a class="btn btn-primary" [routerLink]="['/projects', store.projectId()]">
+      Back to the project
+    </a>
+  </div>
+} @else {
+  <!--
+    Nested rather than an `@else if (report(); as report)`: an `as` alias is only allowed on a
+    *primary* @if block (NG5002), and without the alias `report` in here resolves to the component's
+    signal rather than to the report. The same rule the mapping step's span line already works
+    around.
+  -->
+  @if (report(); as report) {
+    <!-- ---------------------------------------------- one network: unchanged -->
+    <app-import-report-view [report]="report">
+      @if (report.committed) {
+        <div class="alert alert-success mb-0" role="alert">
+          <strong>Imported.</strong> Network #{{ report.networkId }} was created. Opening it in the
+          editor…
+        </div>
+      } @else if (report.valid) {
+        <div class="alert alert-success" role="alert">
+          <strong>Nothing blocks this import.</strong>
+          @if (report.warningCount) {
+            {{ report.warningCount }} warning(s) below are worth reading first - each is a modelling
+            choice rather than a mistake.
+          }
+          Nothing has been created yet: press <em>Confirm import</em> below.
+        </div>
+      } @else {
+        <div class="alert alert-danger" role="alert">
+          <strong>{{ report.errorCount }} error(s) block this import.</strong>
+          No network has been created - an import is all-or-nothing. Fix the source file,
+          or go back and change the column mapping, then validate again.
+        </div>
+      }
+    </app-import-report-view>
+
+    <div class="d-flex justify-content-between gap-2 mb-4">
+      <button
+        type="button"
+        class="btn btn-outline-secondary"
+        [disabled]="store.busy() || report.committed"
+        (click)="store.backToMapping()"
+      >
+        Back to mapping
+      </button>
+      <div class="d-flex gap-2">
+        <button
+          type="button"
+          class="btn btn-outline-secondary"
+          [disabled]="store.busy() || report.committed"
+          (click)="store.validate()"
+        >
+          Re-validate
+        </button>
+        <button
+          type="button"
+          class="btn btn-primary"
+          [disabled]="!store.canConfirm()"
+          (click)="confirm()"
+        >
+          @if (store.busy()) {
+            <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+          }
+          Confirm import
+        </button>
+      </div>
+    </div>
+  } @else {
+    <p class="text-body-secondary">No report yet.</p>
+  }
+}

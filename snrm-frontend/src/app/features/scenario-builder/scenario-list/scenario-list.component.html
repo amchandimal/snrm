@@ -1,0 +1,188 @@
+<div class="container app-view">
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+      <li class="breadcrumb-item"><a routerLink="/projects">Projects</a></li>
+      <li class="breadcrumb-item">
+        <a [routerLink]="['/projects', projectId()]">{{ project()?.name ?? 'Project' }}</a>
+      </li>
+      <li class="breadcrumb-item active" aria-current="page">Scenarios</li>
+    </ol>
+  </nav>
+
+  <div class="d-flex align-items-baseline justify-content-between mb-3">
+    <div>
+      <h1 class="h3 mb-1">Disruption scenarios</h1>
+      <p class="text-body-secondary mb-0">
+        A scenario is a set of disruption events with its Monte Carlo settings. It belongs to the
+        project, not to one network, so the same story can be replayed against every configuration
+        variant - which is what makes their results comparable.
+      </p>
+    </div>
+    <button
+      type="button"
+      class="btn btn-sm btn-outline-secondary"
+      [disabled]="store.isLoading() || !projectId()"
+      (click)="store.load(projectId()!)"
+    >
+      Refresh
+    </button>
+  </div>
+
+  @if (projectError(); as message) {
+    <div class="alert alert-danger" role="alert">{{ message }}</div>
+  }
+
+  @if (store.error(); as message) {
+    <div class="alert alert-danger d-flex justify-content-between align-items-start" role="alert">
+      <span>{{ message }}</span>
+      <button type="button" class="btn-close" aria-label="Dismiss" (click)="store.dismissError()"></button>
+    </div>
+  }
+
+  <div class="card shadow-sm mb-4">
+    <div class="card-body">
+      <form class="row g-2 align-items-start" [formGroup]="newScenario" (ngSubmit)="create()" novalidate>
+        <div class="col-12 col-sm">
+          <label class="form-label visually-hidden" for="new-scenario">New scenario name</label>
+          <input
+            id="new-scenario"
+            type="text"
+            class="form-control"
+            placeholder="New scenario name, e.g. Tier-1 plant fire"
+            formControlName="name"
+            [class.is-invalid]="newScenario.controls.name.touched && newScenario.controls.name.invalid"
+          />
+          <div class="invalid-feedback">A name is required, up to 160 characters.</div>
+        </div>
+        <div class="col-6 col-sm-auto">
+          <label class="form-label visually-hidden" for="new-scenario-reps">Replications</label>
+          <input
+            id="new-scenario-reps"
+            type="number"
+            min="1"
+            step="1"
+            class="form-control"
+            title="Monte Carlo replications per simulation run."
+            formControlName="numReplications"
+            [class.is-invalid]="newScenario.controls.numReplications.invalid"
+          />
+          <div class="form-text">replications</div>
+        </div>
+        <div class="col-12 col-sm-auto">
+          <button type="submit" class="btn btn-primary" [disabled]="store.creating()">
+            @if (store.creating()) {
+              <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+            }
+            Create scenario
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  @if (store.isLoading()) {
+    <p class="text-body-secondary">Loading scenarios…</p>
+  } @else if (store.isEmpty()) {
+    <div class="card shadow-sm">
+      <div class="card-body text-center py-5">
+        <p class="mb-1">This project has no disruption scenarios yet.</p>
+        <p class="text-body-secondary small mb-0">
+          Create one above. You will pick the network to lay its timeline against inside the builder.
+        </p>
+      </div>
+    </div>
+  } @else {
+    <div class="card shadow-sm">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th scope="col">Scenario</th>
+              <th scope="col">Events</th>
+              <th scope="col">Replications</th>
+              <th scope="col" class="d-none d-md-table-cell">Seed</th>
+              <th scope="col" class="d-none d-md-table-cell">Updated</th>
+              <th scope="col" class="text-end">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (scenario of store.scenarios(); track scenario.id) {
+              <tr>
+                <td>
+                  <span class="fw-semibold">{{ scenario.name }}</span>
+                  <span class="id-chip ms-2">#{{ scenario.id }}</span>
+                </td>
+                <td>
+                  @if (scenario.eventCount === 0) {
+                    <span class="badge text-bg-warning" title="A scenario with no events disrupts nothing.">
+                      none yet
+                    </span>
+                  } @else {
+                    {{ scenario.eventCount }}
+                  }
+                </td>
+                <td>{{ scenario.numReplications }}</td>
+                <td class="d-none d-md-table-cell text-body-secondary small">
+                  @if (scenario.seed === null) {
+                    <span title="A fresh seed is drawn per run; the one used is recorded on the run.">
+                      per run
+                    </span>
+                  } @else {
+                    {{ scenario.seed }}
+                  }
+                </td>
+                <td class="d-none d-md-table-cell text-body-secondary small">
+                  {{ scenario.updatedAt | date: 'medium' }}
+                </td>
+                <td class="text-end text-nowrap">
+                  <div class="btn-group btn-group-sm">
+                    <a class="btn btn-primary" [routerLink]="builderLink(scenario)">Open timeline</a>
+                    <button
+                      type="button"
+                      class="btn btn-outline-secondary"
+                      title="Copy the scenario and every event in it - the way to explore a variation without editing a scenario a run already refers to."
+                      [disabled]="store.busyFor() !== null"
+                      (click)="duplicate(scenario)"
+                    >
+                      @if (store.busyFor() === scenario.id) {
+                        <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+                      } @else {
+                        Duplicate
+                      }
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn-outline-danger"
+                      title="Delete this scenario and every event in it. Cannot be undone."
+                      [disabled]="store.busyFor() !== null || !project()"
+                      (click)="askToDelete(scenario)"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  }
+</div>
+
+@if (pendingDelete(); as scenario) {
+  <app-confirm-dialog
+    title="Delete this scenario?"
+    [message]="
+      'Delete ' + scenario.name + ' (#' + scenario.id + ') and its ' + scenario.eventCount + ' event(s). This cannot be undone.'
+    "
+    [details]="deleteDetails"
+    [requiredPhrase]="deletePhrase()"
+    phraseLabel="project name"
+    confirmLabel="Delete scenario"
+    [destructive]="true"
+    [busy]="store.busyFor() !== null"
+    (confirmed)="confirmDelete()"
+    (cancelled)="cancelDelete()"
+  />
+}

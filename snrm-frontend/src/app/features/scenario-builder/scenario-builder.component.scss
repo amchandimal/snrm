@@ -1,0 +1,87 @@
+/* Chart and panel side by side, the same arrangement the network editor uses for canvas and
+   property panel: the thing being edited stays on screen next to the editor, because
+   an event's severity only means something beside the bars around it. */
+
+.builder {
+  padding-bottom: 1.5rem;
+}
+
+.builder__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.builder__network {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1875rem;
+  min-width: 16rem;
+}
+
+.builder__network-label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #495057;
+}
+
+.builder__network-note {
+  font-size: 0.6875rem;
+  color: #6c757d;
+}
+
+.builder__note {
+  font-size: 0.75rem;
+  color: #0a58ca;
+  background: #f1f6ff;
+  border: 1px solid #cfe2ff;
+  border-radius: 0.375rem;
+  padding: 0.4375rem 0.625rem;
+  margin-bottom: 0.75rem;
+}
+
+.builder__grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+  align-items: start;
+}
+
+/* The panel only takes a column when it exists, so a scenario being read gets the full width. */
+@media (min-width: 992px) {
+  .builder__grid--with-editor {
+    grid-template-columns: minmax(0, 1fr) 22rem;
+  }
+}
+
+.builder__chart {
+  min-width: 0;
+}
+
+.builder__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.625rem;
+  margin-bottom: 0.5rem;
+}
+
+.builder__toolbar-note {
+  font-size: 0.6875rem;
+  color: #6c757d;
+}
+
+.builder__panel {
+  position: sticky;
+  top: 1rem;
+  max-height: calc(100vh - 2rem);
+  display: flex;
+}
+
+.builder__panel > * {
+  flex: 1 1 auto;
+  min-width: 0;
+}

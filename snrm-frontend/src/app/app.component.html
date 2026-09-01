@@ -1,0 +1,25 @@
+<nav class="navbar navbar-expand bg-white border-bottom shadow-sm">
+  <div class="container">
+    <a class="navbar-brand fw-semibold" routerLink="/projects">
+      SNRM
+      <span class="fw-normal text-body-secondary d-none d-sm-inline">· Supply Network Resilience Modelling</span>
+    </a>
+
+    @if (isAuthenticated()) {
+      <ul class="navbar-nav me-auto ms-3">
+        <li class="nav-item">
+          <a class="nav-link" routerLink="/projects" routerLinkActive="active">Projects</a>
+        </li>
+      </ul>
+
+      <div class="d-flex align-items-center gap-3">
+        <span class="text-body-secondary small d-none d-sm-inline">{{ username() }}</span>
+        <button type="button" class="btn btn-sm btn-outline-secondary" (click)="logout()">Sign out</button>
+      </div>
+    }
+  </div>
+</nav>
+
+<main>
+  <router-outlet />
+</main>

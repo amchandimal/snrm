@@ -1,0 +1,95 @@
+/* Global styles. Bootstrap 5 is loaded from the installed npm package via angular.json,
+   not from a CDN, so the app builds and runs offline. */
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: #f6f7f9;
+}
+
+/* Vertical breathing room for every routed view. */
+.app-view {
+  padding: 1.5rem 0 3rem;
+}
+
+/* Monospace for identifiers the user may need to read back to the API or Swagger. */
+.id-chip {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.8125rem;
+  color: #6c757d;
+}
+
+/*
+  A lever diff, rendered as key/value lines.
+
+  Global for the same reason as the family colours below: two views read
+  `configuration_variant.lever_changes_json` - the comparison matrix annotates each column with it,
+  and the project dashboard's provenance tree annotates each fork - and the same recorded diff must
+  not look like two different kinds of thing. The flattening itself is `core/lever-changes.ts`.
+*/
+.lever-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.75rem;
+}
+
+.lever-list li {
+  display: flex;
+  gap: 0.375rem;
+  line-height: 1.35;
+}
+
+.lever-list__key {
+  color: #6c757d;
+  white-space: nowrap;
+}
+
+.lever-list__value {
+  font-weight: 500;
+  color: #212529;
+}
+
+/*
+  The six metric families, one colour each.
+
+  Global because four views colour by family - `shared/metric-badge`, the results dashboard's cards,
+  the comparison matrix and its radar chart - and a family that is purple on one screen and orange on
+  the next teaches the reader nothing. The families exist because the SLR found resilience
+  measurement fragmented across literatures that do not convert between one another (RQ5);
+  the colour is what makes "this is a service metric and that is an economic one" visible without a
+  legend.
+
+  Chosen to stay distinguishable under the common forms of colour blindness - no red/green pair
+  carries meaning on its own - and each is paired with a text label everywhere it is used, so the
+  colour is never the only channel.
+*/
+:root {
+  --snrm-family-topological: #6f42c1;
+  --snrm-family-service: #0d6efd;
+  --snrm-family-recovery: #20a4a4;
+  --snrm-family-absorption: #fd7e14;
+  --snrm-family-economic: #d63384;
+  --snrm-family-composite: #198754;
+  --snrm-family-unknown: #6c757d;
+
+  /* The two performance curves and the area between them. */
+  --snrm-curve-disrupted: #d63384;
+  --snrm-curve-baseline: #6c757d;
+  --snrm-loss-fill: rgba(214, 51, 132, 0.16);
+  --snrm-loss-stroke: rgba(214, 51, 132, 0.4);
+
+  /*
+    The one colour disruption speaks in (FR-16) - the canvas's `DISRUPTION_COLOUR`, and now
+    also the results miniature's availability halo at the period cursor (FR-22). Global because two
+    surfaces draw the same fact about the same run and a halo that were red on the canvas and amber
+    on the dashboard would read as two different kinds of trouble. Red rather than the echelon
+    warning's orange: an unconventional arc is a modelling choice worth noticing, an outage is
+    something being done to the network.
+  */
+  --snrm-disruption: #dc3545;
+}

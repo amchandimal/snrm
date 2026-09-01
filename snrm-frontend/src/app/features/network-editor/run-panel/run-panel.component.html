@@ -1,0 +1,414 @@
+<section class="run-panel" aria-label="Run a simulation">
+  <header class="run-panel__header">
+    <h2 class="run-panel__title">
+      Run
+      <span
+        class="run-panel__help"
+        title="Evaluate the network on screen - a baseline with nothing going wrong, or a disruption scenario - and read the report here. Every run of this network is listed below; selecting a completed one loads its report and plays it back (FR-17, FR-21)."
+        >?</span
+      >
+    </h2>
+    @if (store.accepted() && !store.running()) {
+      <button type="button" class="btn btn-sm btn-outline-secondary" (click)="reset()">
+        New run
+      </button>
+    }
+  </header>
+
+  @if (store.error(); as message) {
+    <div class="alert alert-danger run-panel__error" role="alert">
+      <span>{{ message }}</span>
+      <button type="button" class="btn-close" aria-label="Dismiss" (click)="store.dismissError()"></button>
+    </div>
+  }
+
+  <!-- ------------------------------------------------------------------ before -->
+  @if (!store.accepted()) {
+    <div class="run-panel__actions">
+      <button
+        type="button"
+        class="btn btn-sm btn-primary"
+        [disabled]="blocker() !== null"
+        title="No scenario at all: how this configuration performs when nothing goes wrong - the comparator every disrupted run is read against (FR-17)"
+        (click)="runBaseline()"
+      >
+        ▶ Run baseline
+      </button>
+
+      <div class="run-panel__scenario-row">
+        <button
+          type="button"
+          class="btn btn-sm btn-outline-primary"
+          [disabled]="!canRunScenario()"
+          [title]="scenarioId() === null ? 'Pick a scenario first' : 'Run the selected scenario as it is configured - replications and seed come from the scenario itself'"
+          (click)="runScenario()"
+        >
+          ▶ Run scenario
+        </button>
+        <select
+          class="form-select form-select-sm"
+          aria-label="Scenario to run"
+          [disabled]="blocker() !== null"
+          [value]="scenarioIdText()"
+          (change)="onScenarioPicked($any($event.target).value)"
+        >
+          <option value="" disabled>Pick a scenario…</option>
+          @for (scenario of scenarioOptions(); track scenario.id) {
+            <option [value]="scenario.id.toString()">
+              {{ scenario.name }} · {{ scenario.eventCount }} event{{ scenario.eventCount === 1 ? '' : 's' }}
+            </option>
+          }
+        </select>
+      </div>
+
+      <!-- Said before the button is pressed, as the standalone launcher says it: by the time a
+           toast could explain the frozen banner, the researcher has already chosen. -->
+      <p class="run-panel__freeze">
+        Submitting <strong>freezes this network</strong> from the moment the run is accepted
+        - the next edit raises the fork prompt. Running from here is not a way around
+        immutability; it is a way of reaching it sooner. Cancelling releases the network.
+      </p>
+      <p class="run-panel__note">
+        The scenario runs as configured - its own replications and seed. For per-run overrides
+        (replications, noise, seed), use the full launcher from the project dashboard.
+      </p>
+    </div>
+  }
+
+  <!-- ------------------------------------------------------------ history (FR-21) -->
+  <!--
+    Every run of this network, newest first - not only the session's. The
+    list is `NetworkEditorStore.runs()`, the same rows the FR-20 discard confirmation counts, and
+    the tiles are derived by the pure `run-history.ts`.
+  -->
+  <div class="run-history">
+    <header class="run-history__header">
+      <h3 class="run-history__title">
+        Runs of this network
+        @if (tiles().length) {
+          <span class="run-history__count">{{ tiles().length }}</span>
+        }
+      </h3>
+      <button
+        type="button"
+        class="btn btn-sm btn-link run-history__refresh"
+        [disabled]="editor.loadingRuns()"
+        title="Re-read this network's run list. It refreshes itself when a run settles and after every discard; this is for a run submitted somewhere else, which cannot be followed live from here."
+        (click)="refreshHistory()"
+      >
+        {{ editor.loadingRuns() ? 'Refreshing…' : 'Refresh' }}
+      </button>
+    </header>
+
+    @if (editor.runsError(); as message) {
+      <p class="run-panel__settled run-panel__settled--failed">
+        {{ message }} The runs themselves are unaffected - press <strong>Refresh</strong> to try
+        again.
+      </p>
+    }
+
+    @if (historyEmpty()) {
+      <p class="run-panel__note">
+        No runs yet. An empty list is an ordinary answer - this network has never been
+        evaluated, which is also why it is still editable.
+      </p>
+    }
+
+    @if (tiles().length) {
+      <ul class="run-history__list">
+        @for (tile of tiles(); track tile.runId) {
+          <li
+            class="run-history__item"
+            [class.run-history__item--selected]="tile.runId === selectedRunId()"
+          >
+            <button
+              type="button"
+              class="run-history__tile"
+              [attr.aria-current]="tile.runId === selectedRunId() ? 'true' : null"
+              [disabled]="store.deleting()"
+              [title]="
+                tile.loadable
+                  ? 'Load this run’s report here and play it back on the canvas (FR-21)'
+                  : 'A ' + tile.status + ' run has no report: the metric suite and the series are written with the DONE status'
+              "
+              (click)="selectTile(tile)"
+            >
+              <span class="run-history__when">
+                @if (tile.when.at; as at) {
+                  <time [attr.datetime]="at">{{ at | date: 'medium' }}</time>
+                  @if (tile.when.kind === 'started') {
+                    <span class="run-history__when-note">started</span>
+                  }
+                } @else {
+                  <span class="run-history__when-note">Queued - not started yet</span>
+                }
+              </span>
+              <span class="run-history__scenario">{{ tile.scenario }}</span>
+              <span class="run-history__marks">
+                <span class="id-chip">run #{{ tile.runId }}</span>
+                <!-- A badge only where the status is not DONE: one on every tile would make the
+                     ordinary case shout as loudly as the exceptional one (FR-21). -->
+                @if (tile.badge; as badge) {
+                  <span class="badge run-history__badge run-history__badge--{{ badge }}">{{ badge }}</span>
+                }
+                @if (tile.restored; as importedAt) {
+                  <span
+                    class="badge text-bg-light run-history__restored"
+                    [title]="'Restored from a project archive on ' + importedAt + ' - computed by another installation'"
+                    >restored</span
+                  >
+                }
+              </span>
+            </button>
+            <button
+              type="button"
+              class="btn btn-sm btn-link run-history__delete"
+              [disabled]="!tile.deletable || store.deleting()"
+              [title]="
+                tile.deletable
+                  ? 'Delete this run and everything it produced (FR-20). Typed confirmation.'
+                  : 'A ' + tile.status + ' run cannot be deleted - the server refuses it with RUN_ACTIVE. Cancel the job first.'
+              "
+              [attr.aria-label]="'Delete run ' + tile.runId"
+              (click)="requestDeleteTile(tile)"
+            >
+              @if (store.deletingRunId() === tile.runId) {
+                <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+              } @else {
+                🗑
+              }
+            </button>
+          </li>
+        }
+      </ul>
+    }
+
+    @if (store.loadingReport()) {
+      <p class="run-panel__note">Loading that run’s report…</p>
+    }
+
+    <!-- A tile in any state but DONE selects to its status and no further (FR-21). -->
+    @if (statusOnlyRun(); as run) {
+      <p class="run-panel__settled">
+        <strong>run #{{ run.id }} - {{ run.status }}.</strong>
+        There is no report to load: a run's metric suite and all three of its time series are
+        written in one transaction with the <code>DONE</code> status, so nothing exists
+        for this one yet.
+        @if (run.status === 'QUEUED' || run.status === 'RUNNING') {
+          It cannot be followed live here either - the job id that would poll it was issued to
+          whoever submitted it, and to nobody else. Press <strong>Refresh</strong> to see
+          where it got to.
+        }
+      </p>
+    }
+  </div>
+
+  <!-- ------------------------------------------------------------------ during -->
+  @if (store.running()) {
+    <div class="run-panel__progress">
+      <p class="run-panel__running">
+        <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+        Running <strong>{{ store.runLabel() }}</strong>
+        @if (store.job(); as job) {
+          - {{ job.message ?? job.status }}
+        }
+      </p>
+      <div class="progress" role="progressbar" [attr.aria-valuenow]="store.progressPercent()">
+        <div
+          class="progress-bar progress-bar-striped progress-bar-animated"
+          [style.width.%]="store.progressPercent()"
+        ></div>
+      </div>
+
+      @if (store.partial(); as partial) {
+        <!-- The provisional figures of FR-17. The label is load-bearing: these are streaming
+             statistics over a partial sample, replaced by the persisted suite on completion, and
+             never to be persisted or exported. -->
+        <div class="run-panel__partial">
+          <p class="run-panel__partial-head">
+            <span class="badge text-bg-warning">provisional</span>
+            {{ partial.replicationsDone }} / {{ partial.replicationsTotal }} replications - figures
+            so far, replaced by the final suite on completion.
+          </p>
+          <dl class="run-panel__figures">
+            <div class="run-panel__figure">
+              <dt>Fill rate</dt>
+              <dd>{{ percent(partial.fillRate) }}</dd>
+            </div>
+            <div class="run-panel__figure">
+              <dt>Worst period</dt>
+              <dd>{{ percent(partial.minFillRate) }}</dd>
+            </div>
+            <div class="run-panel__figure">
+              <dt>Total cost</dt>
+              <dd>
+                @if (partial.totalCost !== null) {
+                  {{ partial.totalCost | number: '1.0-0' }}
+                } @else {
+                  -
+                }
+              </dd>
+            </div>
+          </dl>
+        </div>
+      }
+
+      <button
+        type="button"
+        class="btn btn-sm btn-outline-danger"
+        [disabled]="store.cancelling()"
+        (click)="cancel()"
+      >
+        {{ store.cancelling() ? 'Stopping…' : 'Cancel run' }}
+      </button>
+      <p class="run-panel__note">
+        Cancellation is cooperative - it stops at the next safe point rather than instantly, so a
+        half-written result can never look complete. A cancelled run holds nothing frozen.
+      </p>
+    </div>
+  }
+
+  <!-- ----------------------------------------------------- settled, not DONE -->
+  @if (store.jobCancelled()) {
+    <p class="run-panel__settled">
+      Cancelled. The network is editable again - a cancelled run locks nothing.
+    </p>
+  }
+  @if (store.jobFailed()) {
+    <p class="run-panel__settled run-panel__settled--failed">
+      The run failed{{ store.job()?.error ? ': ' + store.job()?.error : '.' }} The network is
+      released.
+    </p>
+  }
+
+  <!-- ------------------------------------------------------------------- after -->
+  @if (store.report(); as report) {
+    <div class="run-panel__report">
+      <h3 class="run-panel__report-title">
+        {{ store.reportLabel() }}
+        <span class="id-chip">run #{{ report.run.id }}</span>
+      </h3>
+      @if (report.run.importedAt; as importedAt) {
+        <p class="run-panel__note">
+          Restored from a project archive on {{ importedAt | date: 'medium' }} - these numbers were
+          computed by another installation, under
+          {{ report.run.params?.engineVersion ?? 'an unrecorded engine version' }}.
+        </p>
+      }
+
+      @if (reportPeriodLength(); as period) {
+        @if (store.hasCurve()) {
+          <app-performance-curve
+            [points]="store.curve()"
+            [regions]="store.lossRegions()"
+            [periodLength]="period"
+            [horizonPeriods]="report.run.horizonPeriods"
+          />
+          <p class="run-panel__note">
+            @if (store.reportIsBaseline()) {
+              This run <em>is</em> the baseline (FR-17): the two curves coincide by definition, and
+              there is no triangle to shade.
+            } @else if (store.lossRegions().length) {
+              Shaded: {{ store.shadedArea() | number: '1.0-3' }} fill·periods below the baseline.
+              The LOSS_AREA card may read higher - it averages per-replication triangles, this curve
+              is already an average.
+            } @else {
+              Performance never fell below the baseline - the configuration absorbed the scenario.
+            }
+          </p>
+        }
+      }
+
+      <div class="run-panel__cards">
+        @for (card of reportCards(); track card.code) {
+          <div class="run-panel__card" [title]="card.meaning">
+            <app-metric-badge [code]="card.code" />
+            <!--
+              No `periodLength` here on purpose (MANUAL-TEST §W step 247): with it,
+              `formatMetricValue` writes the dual form into the value *and* both CI
+              bounds, and `card.readable` below then repeats it a third time. The value and its
+              interval read in periods; `readable` makes the one dual statement.
+            -->
+            <app-ci-value
+              [value]="card.value"
+              [ciLow]="card.ciLow"
+              [ciHigh]="card.ciHigh"
+              [format]="card.format"
+            />
+            @if (card.readable) {
+              <p class="run-panel__card-readable">{{ card.readable }}</p>
+            }
+          </div>
+        }
+      </div>
+      @if (store.reportIsBaseline()) {
+        <p class="run-panel__note">
+          TTR, LOSS_AREA, DISRUPTION_COST_DELTA and RESILIENCE_INDEX are absent - they are measured
+          against a disruption, and nothing here was disrupted. Absent is unmeasured, never zero.
+        </p>
+      }
+
+      <div class="run-panel__report-actions">
+        @if (dashboardLink(); as link) {
+          <a class="btn btn-sm btn-outline-primary" [routerLink]="link">Full dashboard ↗</a>
+        }
+        <!--
+          FR-20, taken while looking at the result: this run was not worth keeping. The common case
+          during iterative model building, and the reason the exit is not only the network-wide
+          "Unlock…" in the banner. Typed confirmation, like every other irreversible action here.
+        -->
+        <button
+          type="button"
+          class="btn btn-sm btn-outline-danger"
+          [disabled]="store.deleting()"
+          title="Delete this run and everything it produced. If it is the last run holding this network frozen, the network becomes editable again (FR-20)."
+          (click)="requestDeleteRun(store.reportRun())"
+        >
+          @if (store.deletingRunId() === report.run.id) {
+            <span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>
+          }
+          Delete run
+        </button>
+      </div>
+
+      @if (comparisons().length) {
+        <div class="run-panel__compare">
+          <h4 class="run-panel__compare-title">Side by side (FR-17)</h4>
+          <!-- Two runs of one network as two columns - the ?runIds= form of the comparison, which
+               the network-keyed matrix cannot express. The candidates come from the history, so a
+               pair survives the session that ran it (FR-21). -->
+          @for (candidate of comparisons(); track candidate.runId) {
+            @if (comparisonLink(); as link) {
+              <a
+                class="run-panel__compare-link"
+                [routerLink]="link"
+                [queryParams]="{ runIds: candidate.runIds }"
+              >
+                Compare against {{ candidate.scenario }} (run #{{ candidate.runId }}) ↗
+              </a>
+            }
+          }
+        </div>
+      }
+    </div>
+  }
+</section>
+
+<!-- The single-run form of the FR-20 confirmation; its wording is `run-discard.ts`, which is specced.
+     One dialog for both entrances - the report's Delete run and a history tile's 🗑 - because one
+     irreversible act must not be described two ways. -->
+@if (deleteConfirm(); as confirm) {
+  <app-confirm-dialog
+    [title]="confirm.title"
+    [message]="confirm.message"
+    [details]="confirm.details"
+    [confirmLabel]="confirm.confirmLabel"
+    cancelLabel="Keep the run"
+    [destructive]="true"
+    [busy]="store.deleting()"
+    [requiredPhrase]="confirm.requiredPhrase"
+    [phraseLabel]="confirm.phraseLabel"
+    (confirmed)="confirmDeleteRun()"
+    (cancelled)="cancelDelete()"
+  />
+}

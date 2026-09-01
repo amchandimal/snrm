@@ -1,0 +1,225 @@
+<section class="disruptions" aria-label="Disruptions">
+  <header class="disruptions__header">
+    <h2 class="disruptions__title">
+      Disruptions
+      <span
+        class="disruptions__help"
+        title="Author a disruption scenario against the network on screen (FR-16). An event's target is a node, a link or a region - every one of them a thing on this canvas."
+        >?</span
+      >
+    </h2>
+    @if (timelineLink(); as link) {
+      <a
+        class="disruptions__timeline"
+        [routerLink]="link"
+        title="Open this scenario's Gantt timeline - the surface for when, as this one is the surface for what"
+        >Timeline ↗</a
+      >
+    }
+  </header>
+
+  <!-- --------------------------------------------------------------- the scenario -->
+  <div class="disruptions__field">
+    <label class="disruptions__label" for="disruptions-scenario">Scenario</label>
+    <select
+      id="disruptions-scenario"
+      class="form-select form-select-sm"
+      [disabled]="store.scenarios.isLoading()"
+      [value]="selectedScenarioText()"
+      (change)="onScenarioPicked($any($event.target).value)"
+    >
+      <option value="">None selected</option>
+      @for (scenario of scenarios(); track scenario.id) {
+        <option [value]="scenario.id.toString()">
+          {{ scenario.name }} · {{ scenario.eventCount }} event{{ scenario.eventCount === 1 ? '' : 's' }}
+        </option>
+      }
+    </select>
+
+    @if (naming()) {
+      <div class="disruptions__new">
+        <input
+          type="text"
+          class="form-control form-control-sm"
+          placeholder="Scenario name"
+          aria-label="Name for the new scenario"
+          [value]="draftName()"
+          (input)="onDraftName($any($event.target).value)"
+          (keydown.enter)="createScenario()"
+          (keydown.escape)="cancelNaming()"
+        />
+        <button
+          type="button"
+          class="btn btn-sm btn-primary"
+          [disabled]="!draftName().trim() || store.scenarios.creating()"
+          (click)="createScenario()"
+        >
+          Create
+        </button>
+        <button
+          type="button"
+          class="btn btn-sm btn-outline-secondary"
+          [disabled]="store.scenarios.creating()"
+          (click)="cancelNaming()"
+        >
+          Cancel
+        </button>
+      </div>
+    } @else {
+      <button type="button" class="btn btn-sm btn-outline-secondary" (click)="startNaming()">
+        + New scenario
+      </button>
+    }
+
+    <span class="disruptions__note">
+      A scenario belongs to the <strong>project</strong>, not to this network - which is what lets one
+      disruption story be replayed against every configuration variant.
+    </span>
+  </div>
+
+  <!--
+    The point of the constraint, said out loud. A frozen network is exactly the one a researcher has
+    already evaluated, so it is the common case for asking a new question of it - and an editor that
+    raised the fork prompt here would make that impossible for no reason.
+  -->
+  @if (editor.readOnly()) {
+    <p class="disruptions__frozen">
+      A run has frozen this network, and that changes nothing here. A scenario is a separate record:
+      writing one never edits the network and never raises the fork prompt.
+    </p>
+  }
+
+  @if (store.error(); as message) {
+    <div class="alert alert-danger disruptions__error" role="alert">
+      <span>{{ message }}</span>
+      <button type="button" class="btn-close" aria-label="Dismiss" (click)="store.dismissError()"></button>
+    </div>
+  }
+
+  <!-- ----------------------------------------------------------------- authoring -->
+  <div class="disruptions__actions">
+    <button
+      type="button"
+      class="btn btn-sm btn-primary"
+      [disabled]="aimBlocker() !== null || store.saving()"
+      [title]="aimBlocker() ?? 'Open the event editor aimed at what is selected on the canvas'"
+      (click)="openAimed()"
+    >
+      ⚡ {{ addLabel() }}
+    </button>
+    <button
+      type="button"
+      class="btn btn-sm btn-outline-secondary"
+      [disabled]="!store.hasScenario() || store.saving()"
+      title="A region is not a canvas element, so it is chosen rather than aimed at - the nodes its tag covers light up as you pick it"
+      (click)="openRegion()"
+    >
+      Region…
+    </button>
+  </div>
+
+  <!-- Only once a scenario is open and nothing is aimed: before that the empty list below already
+       says to pick one, and two sentences asking for the same thing is one too many. -->
+  @if (!editorOpen() && store.hasScenario() && !canAim()) {
+    <p class="disruptions__aim-hint">
+      Select a node or a link on the canvas to aim a disruption at it. Box-select or Ctrl-click to
+      strike several with one window.
+    </p>
+  }
+
+  @if (editor.network(); as network) {
+    @if (editorOpen()) {
+      <app-event-editor
+        [event]="editingEvent()"
+        [network]="network"
+        [nodes]="editor.nodeList()"
+        [links]="editor.linkList()"
+        [regions]="store.regions()"
+        [aimedAt]="editorAimedAt()"
+        [openAs]="openAs()"
+        [busy]="store.saving()"
+        [error]="store.error()"
+        (saved)="save($event)"
+        (deleted)="askDelete($event)"
+        (cancelled)="closeEditor()"
+        (regionPreviewed)="onRegionPreviewed($event)"
+      />
+    }
+  }
+
+  <!-- ------------------------------------------------------------------ the list -->
+  @if (!editorOpen()) {
+    @if (!store.hasScenario()) {
+      <p class="disruptions__empty">
+        Pick a scenario above, or create one. Its events are drawn over this network as you add them.
+      </p>
+    } @else if (store.isLoading()) {
+      <p class="disruptions__empty">Loading the scenario…</p>
+    } @else if (!store.resolvedRows().length) {
+      <p class="disruptions__empty">
+        Nothing in this scenario strikes this network yet. Select a node or a link on the canvas and
+        press <em>Add disruption</em>.
+      </p>
+    } @else {
+      <ul class="disruptions__list">
+        @for (row of store.resolvedRows(); track row.target.key) {
+          <li class="disruptions__row">
+            <button
+              type="button"
+              class="disruptions__target"
+              [title]="'Select ' + row.target.label + ' on the canvas'"
+              (click)="reveal(row)"
+            >
+              <span class="disruptions__target-name">{{ row.target.label }}</span>
+              <span class="disruptions__target-kind">{{ row.target.sublabel }}</span>
+            </button>
+            @for (bar of row.bars; track bar.event.id) {
+              <button
+                type="button"
+                class="disruptions__event"
+                [class.disruptions__event--past-horizon]="bar.exceedsHorizon"
+                title="Edit this event"
+                (click)="openEvent(row, bar)"
+              >
+                {{ line(bar) }}
+              </button>
+            }
+          </li>
+        }
+      </ul>
+    }
+
+    @if (store.barsPastHorizon(); as past) {
+      <p class="disruptions__warn">
+        {{ past }} event{{ past === 1 ? '' : 's' }} end after this network's horizon. Their recovery
+        is never observed, so any metric over them measures the truncation.
+      </p>
+    }
+
+    <!--
+      Counted, never silently dropped. A scenario is project-scoped and legitimately outlives the
+      network its events were written against, so a list shorter than the scenario's own
+      event count needs a sentence rather than leaving the reader to find the discrepancy.
+    -->
+    @if (store.unresolvedEventCount(); as stray) {
+      <p class="disruptions__aside">
+        {{ stray }} more event{{ stray === 1 ? '' : 's' }} in this scenario target something this
+        network does not have. That is legitimate - the scenario outlives any one variant - and the
+        timeline shows them all.
+      </p>
+    }
+  }
+</section>
+
+@if (pendingDelete()) {
+  <app-confirm-dialog
+    title="Delete this disruption?"
+    [message]="deleteMessage()"
+    [details]="deleteDetails"
+    confirmLabel="Delete event"
+    [destructive]="true"
+    [busy]="store.deletingEvent() !== null"
+    (confirmed)="confirmDelete()"
+    (cancelled)="cancelDelete()"
+  />
+}

@@ -1,0 +1,237 @@
+<!--
+  The element inspector (FR-18).
+
+  A card, not a panel: it sits inside the property panel's always-open aside, above the attribute
+  form. Present only while a run is playable and exactly one element is selected - see the component
+  note for why a multi-selection gets nothing rather than an average.
+-->
+@if (visible()) {
+  <section class="inspector">
+    <header class="inspector__header">
+      <h3 class="inspector__title">Simulation</h3>
+      @if (criticality(); as value) {
+        <span
+          class="inspector__criticality"
+          title="NODE_CRITICALITY - the relative drop in serviceable demand if this node were removed. A structural figure: it belongs to the network, not to this period."
+        >
+          Criticality {{ value }}
+        </span>
+      }
+    </header>
+    <p class="inspector__clock">{{ clock() }}</p>
+
+    @if (note(); as message) {
+      <p class="inspector__note">{{ message }}</p>
+    } @else if (hasSeries()) {
+      <!-- ------------------------------------------------------- the stock / flow sparkline -->
+      @if (spark(); as geometry) {
+        @if (!geometry.empty) {
+          <figure class="inspector__spark">
+            <svg
+              class="inspector__spark-svg"
+              [attr.viewBox]="viewBox"
+              role="img"
+              [attr.aria-label]="node() ? 'On-hand inventory over the run' : 'Flow over the run'"
+            >
+              @if (averageAt() !== null) {
+                <line
+                  class="inspector__spark-mean"
+                  [attr.x1]="geometry.left"
+                  [attr.x2]="plotRight()"
+                  [attr.y1]="averageAt()"
+                  [attr.y2]="averageAt()"
+                />
+              }
+              <!-- Baseline first, so the disrupted line is the one on top where they coincide. -->
+              @for (path of geometry.baselinePaths; track $index) {
+                <path class="inspector__spark-baseline" [attr.d]="path" />
+              }
+              @for (path of geometry.paths; track $index) {
+                <path class="inspector__spark-line" [attr.d]="path" />
+              }
+              @if (cursorAt() !== null) {
+                <line
+                  class="inspector__spark-cursor"
+                  [attr.x1]="cursorAt()"
+                  [attr.x2]="cursorAt()"
+                  [attr.y1]="geometry.top"
+                  [attr.y2]="plotBottom()"
+                />
+              }
+            </svg>
+            <figcaption class="inspector__caption">{{ sparkCaption() }}</figcaption>
+          </figure>
+        }
+      }
+
+      <!-- ---------------------------------------------------------------------- node rows -->
+      @if (node()) {
+        <div class="inspector__rows">
+          <div class="inspector__row">
+            <span class="inspector__label">Realtime inventory (on-hand)</span>
+            <span class="inspector__value">{{ show(onHandNow()) }}</span>
+          </div>
+
+          <div class="inspector__row">
+            <span class="inspector__label">Average inventory</span>
+            <span class="inspector__value">
+              @if (averageText(); as value) {
+                {{ value }}
+              } @else {
+                <span class="inspector__absent">no series</span>
+              }
+            </span>
+          </div>
+
+          <div class="inspector__row">
+            <span class="inspector__label">In transit / arrivals</span>
+            <span class="inspector__value">
+              {{ show(inTransitNow()) }} / {{ show(arrivalsNow()) }}
+            </span>
+            <span class="inspector__hint">
+              In the pipeline at period end, and what landed here this period - an arc's flow, one
+              period later.
+            </span>
+          </div>
+
+          <div class="inspector__row">
+            <span class="inspector__label">Current lead time</span>
+            <span class="inspector__value">
+              @if (currentLead(); as value) {
+                {{ value }}
+              } @else {
+                <span class="inspector__absent">no inbound this period</span>
+              }
+            </span>
+          </div>
+
+          <div class="inspector__row">
+            <span class="inspector__label">Average lead time</span>
+            <span class="inspector__value">
+              @if (averageLead(); as value) {
+                {{ value }}
+              } @else {
+                <span class="inspector__absent">nothing dispatched here in this run</span>
+              }
+            </span>
+            <span class="inspector__hint">
+              Weighted by what each period dispatched toward this node.
+            </span>
+          </div>
+
+          <!-- Demand sits on CUSTOMER nodes alone, so these rows would be zeros everywhere else. -->
+          @if (isCustomer()) {
+            <div class="inspector__row">
+              <span class="inspector__label">
+                Served / demand
+                @if (stockout()) {
+                  <span class="inspector__badge">stockout</span>
+                }
+              </span>
+              <span class="inspector__value">
+                {{ show(servedNow()) }} of {{ show(demandNow()) }} ·
+                @if (fillNow(); as fill) {
+                  {{ fill }}
+                } @else {
+                  <span class="inspector__absent">no demand this period</span>
+                }
+              </span>
+            </div>
+
+            <div class="inspector__row">
+              <span class="inspector__label">Lost so far</span>
+              <span class="inspector__value">{{ show(lostSoFar()) }}</span>
+              <span class="inspector__hint">
+                lost, not backlogged - the engine models no catch-up
+              </span>
+            </div>
+          }
+
+          <div class="inspector__row">
+            <span class="inspector__label">Throughput / utilisation</span>
+            <span class="inspector__value">
+              {{ show(throughputNow()) }} ·
+              <span [class.inspector__absent]="nodeUtilisation().absent">
+                {{ nodeUtilisation().text }}
+              </span>
+            </span>
+            <span class="inspector__hint">
+              Flow across this node's own capacity arc - production at a supply origin, pass-through
+              elsewhere.
+            </span>
+          </div>
+
+          <div class="inspector__row">
+            <span class="inspector__label">Availability</span>
+            <span class="inspector__value">
+              @if (availabilityNow(); as value) {
+                {{ value }}
+              } @else {
+                <span class="inspector__absent">no series</span>
+              }
+            </span>
+          </div>
+        </div>
+      }
+
+      <!-- ---------------------------------------------------------------------- link rows -->
+      @if (link()) {
+        <div class="inspector__rows">
+          <div class="inspector__row">
+            <span class="inspector__label">Flow</span>
+            <span class="inspector__value">{{ show(flowNow()) }}</span>
+            <span class="inspector__hint">
+              Dispatched onto the arc this period, not what arrived.
+            </span>
+          </div>
+
+          <div class="inspector__row">
+            <span class="inspector__label">Average flow</span>
+            <span class="inspector__value">
+              @if (averageText(); as value) {
+                {{ value }}
+              } @else {
+                <span class="inspector__absent">no series</span>
+              }
+            </span>
+          </div>
+
+          <div class="inspector__row">
+            <span class="inspector__label">Utilisation</span>
+            <span class="inspector__value">
+              <span [class.inspector__absent]="linkUtilisation().absent">
+                {{ linkUtilisation().text }}
+              </span>
+            </span>
+          </div>
+
+          <div class="inspector__row">
+            <span class="inspector__label">Availability</span>
+            <span class="inspector__value">
+              @if (availabilityNow(); as value) {
+                {{ value }}
+              } @else {
+                <span class="inspector__absent">no series</span>
+              }
+            </span>
+          </div>
+
+          <div class="inspector__row">
+            <span class="inspector__label">Declared lead time</span>
+            <span class="inspector__value">
+              @if (declaredLead(); as value) {
+                {{ value }}
+              } @else {
+                <span class="inspector__absent">no clock</span>
+              }
+            </span>
+            <span class="inspector__hint">
+              Realised transit always equals the declared lead - disruptions re-route flow, they
+              never delay material in transit.
+            </span>
+          </div>
+        </div>
+      }
+    }
+  </section>
+}

@@ -1,0 +1,7 @@
+name,type,capacity_value,processing_time_value,fixed_cost,var_cost,failure_prob,region,lat,lng,caption,caption_visible
+SUP-1,SUPPLIER,500,0,1000,2,0.02,EU-West,52.37,4.90,Sole source — 6-week qualification,
+PLANT-1,PLANT,400,1,5000,5,0.01,EU-West,51.22,6.78,Two lines; second one idle since Q1,false
+DC-1,DC,350,0,1200,1,0.01,EU-North,59.33,18.07,"Nordic hub — 3PL operated, 2 shifts",true
+DC-2,DC,350,0,1200,1,0.03,EU-South,41.90,12.50,,
+CUST-1,CUSTOMER,,0,0,0,0,EU-North,60.17,24.94,,
+CUST-2,CUSTOMER,,0,0,0,0,EU-South,37.98,23.73,,

@@ -1,0 +1,67 @@
+<!-- Radar of normalised metrics, every axis oriented outward-is-better. -->
+@if (!isDrawable()) {
+  <p class="text-body-secondary small mb-0">
+    A radar needs at least three rankable metrics and one variant with values. Structural metrics
+    such as density are left out on purpose - they describe a configuration without ranking it, so an
+    axis for them would point somewhere that means nothing.
+  </p>
+} @else {
+  <figure class="radar mb-0">
+    <svg
+      class="radar__svg"
+      [attr.viewBox]="'0 0 ' + size + ' ' + size"
+      role="img"
+      aria-label="Radar chart of normalised metrics. Each axis is scaled across the compared variants and oriented so that further out is better."
+    >
+      <g class="radar__web">
+        @for (ring of ringPolygons(); track $index) {
+          <polygon [attr.points]="ring" />
+        }
+        @for (spoke of spokes(); track spoke.axis.metricCode) {
+          <line
+            [attr.x1]="centre.x"
+            [attr.y1]="centre.y"
+            [attr.x2]="spoke.x"
+            [attr.y2]="spoke.y"
+          />
+        }
+      </g>
+
+      @for (polygon of polygons(); track polygon.series.networkId) {
+        <polygon
+          class="radar__series"
+          [attr.points]="polygon.points"
+          [attr.stroke]="polygon.colour"
+          [attr.fill]="polygon.colour"
+        >
+          <title>{{ polygon.series.label }}</title>
+        </polygon>
+      }
+
+      <g class="radar__labels">
+        @for (label of labels(); track label.axis.metricCode) {
+          <text [attr.x]="label.x" [attr.y]="label.y" [attr.text-anchor]="label.anchor">
+            {{ label.axis.label }}
+            @if (label.axis.tied) {
+              <title>Every compared variant scored the same on this metric.</title>
+            }
+          </text>
+        }
+      </g>
+    </svg>
+
+    <figcaption class="radar__legend">
+      @for (polygon of polygons(); track polygon.series.networkId) {
+        <span class="radar__key">
+          <span class="radar__swatch" [style.background]="polygon.colour"></span>
+          {{ polygon.series.label }}
+        </span>
+      }
+    </figcaption>
+
+    <p class="radar__caveat">
+      Each axis is min–max scaled across <em>these</em> variants, so adding one redraws them all, and
+      a metric they barely differ on still spans the full radius. Read the matrix for the numbers.
+    </p>
+  </figure>
+}

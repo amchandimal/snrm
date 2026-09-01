@@ -1,0 +1,12 @@
+name,type,capacity_value,processing_time_value,processing_time_unit,fixed_cost,var_cost,failure_prob,region,lat,lng,notes
+SUP-1,SUPPLIER,500,0,DAY,1000,2,0.02,EU-West,52.37,4.90,primary supplier,STRAY
+PLANT-1,PLANT,400,1,DAY,5000,5,0.01,EU-West,51.22,6.78,
+DC-1,DC,350,0,DAY,1200,1,0.01,EU-North,59.33,18.07,
+DC-2,DC,350,0,DAY,1200,1,0.03,EU-South,41.90,12.50,
+DC-1,DC,300,0,DAY,1100,1,0.02,EU-North,59.33,18.07,second DC-1
+CUST-1,CUSTOMER,,0,DAY,0,0,0,EU-North,60.17,24.94,
+CUST-2,CUSTOMER,,0,DAY,0,0,0,EU-South,37.98,23.73,
+,CUSTOMER,,0,DAY,0,0,0,EU-West,50.85,4.35,name left blank
+DEPOT-1,WAREHOUSE,200,0,DAY,800,1,0.01,EU-Central,50.11,8.68,
+BAD-DC-1,DC,n/a,2,fortnight,900,1,1.4,EU-East,52.23,21.01,
+ORPHAN-1,DC,250,0,DAY,700,1,0.01,EU-North,63.83,20.26,

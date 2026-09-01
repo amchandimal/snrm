@@ -1,0 +1,171 @@
+<div class="time-backdrop"></div>
+
+<div class="modal d-block" tabindex="-1" role="dialog" aria-modal="true" (click)="onBackdropClick($event)">
+  <div class="modal-dialog modal-dialog-centered" role="document">
+    <div class="modal-content shadow">
+      <div class="modal-header">
+        <h5 class="modal-title">Network time settings</h5>
+        <button
+          type="button"
+          class="btn-close"
+          aria-label="Cancel"
+          [disabled]="busy()"
+          (click)="cancelled.emit()"
+        ></button>
+      </div>
+
+      <div class="modal-body">
+        <p class="small text-body-secondary">
+          The period is the simulation clock: every duration in this network - lead times,
+          processing times, event windows - is discretised against it when a run is built.
+          It is currently <strong>{{ currentPeriodLabel() }}</strong>.
+        </p>
+
+        <app-unit-value
+          label="Period length"
+          fieldId="time-period"
+          [kind]="'duration'"
+          [value]="periodValue()"
+          [unit]="periodUnit()"
+          [disabled]="busy()"
+          [error]="periodValid() ? null : 'The period must be greater than zero.'"
+          (valueCommitted)="onPeriodValue($event)"
+          (unitPicked)="onPeriodUnit($event)"
+        />
+
+        <div class="time-field">
+          <button
+            type="button"
+            class="btn btn-sm btn-outline-secondary"
+            [disabled]="busy() || suggesting()"
+            (click)="suggestPeriod()"
+          >
+            @if (suggesting()) {
+              <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+            }
+            Suggest period
+          </button>
+          <span class="time-hint">
+            The coarsest period that keeps every declared duration within 10%.
+          </span>
+          @if (suggestionNote(); as note) {
+            <span class="time-note">{{ note }}</span>
+          }
+        </div>
+
+        <div class="time-field">
+          <label class="time-label" for="time-horizon">Horizon (periods)</label>
+          <input
+            id="time-horizon"
+            type="number"
+            min="1"
+            step="1"
+            class="form-control form-control-sm"
+            [disabled]="busy()"
+            [value]="horizonDraft()"
+            (input)="onHorizon($any($event.target).value)"
+          />
+          @if (horizon() === null) {
+            <span class="time-error">Enter a whole number of periods, at least 1.</span>
+          }
+        </div>
+
+        <!-- The horizon does not follow a period change, and saying so is the point. -->
+        <div class="time-span">
+          <span>
+            A run currently covers <strong>{{ currentSpan() }}</strong>.
+            @if (newSpan(); as span) {
+              These settings would cover <strong>{{ span }}</strong>.
+            }
+          </span>
+          @if (spanWouldChange()) {
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-primary"
+              [disabled]="busy()"
+              (click)="matchSpan()"
+            >
+              Keep the same span ({{ matchingHorizon() }} periods)
+            </button>
+          }
+        </div>
+
+        <div class="time-field">
+          <label class="time-label" for="time-policy">Rounding policy</label>
+          <select
+            id="time-policy"
+            class="form-select form-select-sm"
+            [disabled]="busy()"
+            [value]="policy()"
+            (change)="onPolicy($any($event.target).value)"
+          >
+            @for (option of policies; track option) {
+              <option [value]="option">{{ option }}</option>
+            }
+          </select>
+          <span class="time-hint">{{ policyHints[policy()] }}</span>
+          <span class="time-hint">
+            A property of the network, not of each duration, so two variants compared side by side
+            discretise identically.
+          </span>
+        </div>
+
+        <!--
+          Visual playback (FR-18). Separated from the three fields above because it is not
+          one of them: a device-local view preference, saved the moment it changes, never sent to the
+          API, and never disabled - not by busy(), not by a frozen network. See the component's
+          "Why the playback-speed row is outside that contract".
+        -->
+        <div class="playback-field">
+          <label class="time-label" for="playback-speed">Playback speed</label>
+          <!--
+            The pick is carried by [selected] on the options, not by [value] on the select: a
+            [value] binding is applied before @for has created any option, so the browser drops it
+            and falls back to the first one - which here would show 0.5 while the pace line said 2.
+            Same reason as the column mapper in `data-import/mapping-step`.
+          -->
+          <select
+            id="playback-speed"
+            class="form-select form-select-sm"
+            (change)="onPlaybackSpeed($any($event.target).value)"
+          >
+            @for (option of speedLadder; track option) {
+              <option [value]="option" [selected]="option === playbackSpeed()">
+                {{ speedLabel(option) }}
+              </option>
+            }
+          </select>
+          <span class="playback-pace">{{ playbackPace() }}</span>
+          <span class="time-hint">
+            Affects only the visual simulation on the canvas, never results. Saved on this device
+            for this network - applying the time base is not required.
+          </span>
+        </div>
+
+        @if (!network().editable) {
+          <p class="time-frozen">
+            This network is frozen by a simulation run. Results are stated in periods, so redefining
+            the period is refused - applying will offer to fork a configuration
+            variant instead.
+          </p>
+        }
+
+        @if (actionError(); as message) {
+          <p class="time-error">{{ message }}</p>
+        }
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" [disabled]="busy()" (click)="cancelled.emit()">
+          Cancel
+        </button>
+        <button type="button" class="btn btn-primary" [disabled]="!canApply()" (click)="submit()">
+          @if (busy()) {
+            <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+          }
+          Apply time base
+        </button>
+      </div>
+    </div>
+  </div>
+</div>

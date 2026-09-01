@@ -1,0 +1,68 @@
+<!--
+  The shared period cursor (FR-22). Scrub, step, and the readout - no play button, because
+  the dashboard navigates a run and animating one is the editor's playback.
+-->
+<div class="cursor" role="group" aria-label="Period cursor">
+  <button
+    type="button"
+    class="cursor__button"
+    aria-label="Step back one period"
+    title="Step back one period (←)"
+    [disabled]="atStart()"
+    (click)="stepBack()"
+  >
+    ⏮
+  </button>
+
+  <!--
+    0…lastPeriod - indices of the run's series, not 1…horizon. Period 0 is a real period (the chain
+    is still filling in it), so an off-by-one here would hide the one period the warm-up shows in.
+    The playback bar's scrub bar spans the same range for the same reason.
+  -->
+  <input
+    class="cursor__scrub"
+    type="range"
+    min="0"
+    step="1"
+    [max]="lastPeriodText()"
+    [value]="periodText()"
+    aria-label="Scrub to a period"
+    (input)="onScrub($any($event.target).value)"
+  />
+
+  <button
+    type="button"
+    class="cursor__button"
+    aria-label="Step forward one period"
+    title="Step forward one period (→)"
+    [disabled]="atEnd()"
+    (click)="stepForward()"
+  >
+    ⏭
+  </button>
+
+  <!--
+    Never a bare index: the same 52-period horizon is a year on one network and
+    two days on another. Restated through the **run's** clock, so a later time-base change on a
+    forked variant cannot relabel this run - `core/metric-display.periodReadout`, the same string the
+    editor's transport prints.
+  -->
+  <span class="cursor__readout" aria-live="off">{{ store.cursorLabel() }}</span>
+
+  <button
+    type="button"
+    class="btn btn-link btn-sm cursor__reset"
+    [disabled]="atEnd()"
+    title="Back to the run's last period, where this page opened"
+    (click)="toEnd()"
+  >
+    End of run
+  </button>
+</div>
+
+<p class="cursor__hint">
+  One cursor for the whole page: every chart carries its line at this period, every per-period figure
+  below is read at it, and the map is tinted with this period's availability and fill. Use the
+  slider, the step buttons, or <kbd>←</kbd> and <kbd>→</kbd>. The page opens on the last period -
+  the run's end state, which is what the metric cards summarise.
+</p>

@@ -1,0 +1,26 @@
+/* Run launcher and job monitor. */
+
+.progress {
+  height: 0.75rem;
+}
+
+/*
+  The monitor panel keeps its place while the page scrolls: a job that takes a minute is a minute
+  during which the researcher is reading the form below it, and a progress bar that scrolls away is
+  a progress bar nobody watches.
+*/
+@media (min-width: 992px) {
+  .col-lg-5 > .card {
+    position: sticky;
+    top: 1rem;
+  }
+}
+
+dl.row {
+  margin-bottom: 0;
+
+  dt {
+    font-weight: 500;
+    color: #6c757d;
+  }
+}

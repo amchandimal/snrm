@@ -1,0 +1,154 @@
+<div class="container app-view">
+  <div class="d-flex align-items-baseline justify-content-between mb-3">
+    <div>
+      <h1 class="h3 mb-1">Projects</h1>
+      <p class="text-body-secondary mb-0">
+        A project holds one modelling exercise: its networks, products, scenarios and configuration
+        variants.
+      </p>
+    </div>
+    <button type="button" class="btn btn-sm btn-outline-secondary" [disabled]="store.isLoading()" (click)="store.load()">
+      Refresh
+    </button>
+  </div>
+
+  @if (store.error(); as message) {
+    <div class="alert alert-danger d-flex justify-content-between align-items-start" role="alert">
+      <span>{{ message }}</span>
+      <button type="button" class="btn-close" aria-label="Dismiss" (click)="store.dismissError()"></button>
+    </div>
+  }
+
+  <div class="card shadow-sm mb-4">
+    <div class="card-body">
+      <form
+        class="row g-2 align-items-start"
+        [formGroup]="newProject"
+        (ngSubmit)="create()"
+        novalidate
+      >
+        <div class="col-12 col-sm">
+          <label class="form-label visually-hidden" for="new-project">New project name</label>
+          <input
+            id="new-project"
+            type="text"
+            class="form-control"
+            placeholder="New project name"
+            formControlName="name"
+            [class.is-invalid]="newProject.controls.name.touched && newProject.controls.name.invalid"
+          />
+          <div class="invalid-feedback">A name is required, up to 160 characters.</div>
+        </div>
+        <div class="col-12 col-sm-auto">
+          <button type="submit" class="btn btn-primary" [disabled]="store.pending() === 'new'">
+            @if (store.pending() === 'new') {
+              <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+            }
+            Create project
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  @if (store.isLoading() && !store.projects().length) {
+    <p class="text-body-secondary">Loading projects…</p>
+  } @else if (store.isEmpty()) {
+    <div class="card shadow-sm">
+      <div class="card-body text-center py-5">
+        <p class="mb-1">No projects yet.</p>
+        <p class="text-body-secondary small mb-0">Create one above to start modelling a network.</p>
+      </div>
+    </div>
+  } @else if (store.projects().length) {
+    <div class="card shadow-sm">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th scope="col">Name</th>
+              <th scope="col" class="d-none d-md-table-cell">Created</th>
+              <th scope="col" class="d-none d-md-table-cell">Updated</th>
+              <th scope="col" class="text-end">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (project of store.projects(); track project.id) {
+              <tr>
+                <td>
+                  @if (renamingId() === project.id) {
+                    <div class="d-flex gap-2 align-items-center">
+                      <input
+                        type="text"
+                        class="form-control form-control-sm"
+                        [formControl]="renameControl"
+                        (keyup.enter)="saveRename(project)"
+                        (keyup.escape)="cancelRename()"
+                      />
+                      <button
+                        type="button"
+                        class="btn btn-sm btn-primary"
+                        [disabled]="store.pending() === project.id"
+                        (click)="saveRename(project)"
+                      >
+                        Save
+                      </button>
+                      <button type="button" class="btn btn-sm btn-outline-secondary" (click)="cancelRename()">
+                        Cancel
+                      </button>
+                    </div>
+                  } @else {
+                    <a class="fw-semibold text-decoration-none" [routerLink]="['/projects', project.id]">
+                      {{ project.name }}
+                    </a>
+                    <span class="id-chip ms-2">#{{ project.id }}</span>
+                  }
+                </td>
+                <td class="d-none d-md-table-cell text-body-secondary small">
+                  {{ project.createdAt | date: 'medium' }}
+                </td>
+                <td class="d-none d-md-table-cell text-body-secondary small">
+                  {{ project.updatedAt | date: 'medium' }}
+                </td>
+                <td class="text-end text-nowrap">
+                  <a class="btn btn-sm btn-outline-primary me-1" [routerLink]="['/projects', project.id]">Open</a>
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-outline-secondary me-1"
+                    [disabled]="renamingId() === project.id"
+                    (click)="startRename(project)"
+                  >
+                    Rename
+                  </button>
+                  <button type="button" class="btn btn-sm btn-outline-danger" (click)="askDelete(project)">
+                    Delete
+                  </button>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  }
+
+  <!--
+    The archive restore, on the list rather than on a project: a restore creates a new
+    project rather than adding to one. Export is the matching control on each project's
+    dashboard.
+  -->
+  <app-archive-import (restored)="onRestored()" />
+</div>
+
+@if (pendingDelete(); as project) {
+  <app-confirm-dialog
+    title="Delete project"
+    [message]="'Delete “' + project.name + '”? This cannot be undone.'"
+    [details]="deleteDetails"
+    confirmLabel="Delete project"
+    [destructive]="true"
+    [busy]="store.pending() === project.id"
+    (confirmed)="confirmDelete()"
+    (cancelled)="pendingDelete.set(null)"
+  />
+}

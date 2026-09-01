@@ -1,0 +1,160 @@
+<!--
+  One element series as a stepwise chart (FR-22).
+
+  The paths are `network-editor/sparkline-geometry`'s, at chart size - see the component note. A null
+  breaks the line rather than dipping it to the floor, which is the whole reason this is hand-drawn.
+-->
+<figure class="chart mb-0" [class.chart--large]="isLarge()" [title]="tooltip()">
+  <figcaption class="chart__head">
+    <span class="chart__label">{{ chart().label }}</span>
+    <span class="chart__figures">
+      <!--
+        This series at the shared cursor (FR-22). Beside the horizon mean rather than instead of it:
+        they answer two different questions - what this element did over the run, and what it was
+        doing at the period every other surface on the page is also showing.
+      -->
+      @if (cursorReading(); as reading) {
+        <span class="chart__at-cursor">at cursor {{ reading }}</span>
+      }
+      @if (meanText(); as mean) {
+        <span class="chart__mean">{{ mean }}</span>
+      }
+    </span>
+  </figcaption>
+
+  @if (chart().suppressed; as sentence) {
+    <!--
+      A sentence in place of the chart, not an empty one. An arc with no declared capacity has no
+      utilisation series to draw: every period is null, and a chart broken into nothing would say
+      less than the word does.
+    -->
+    <p class="chart__absent">{{ sentence }}</p>
+  } @else if (!hasLine()) {
+    <!--
+      Every period absent. There is no line to break, so the sentence carries the whole reading - and
+      the series' own explanation of what an absence means comes with it, because `SUP-1` having no
+      inbound lead in any period is a fact about the network (a supply origin has no inbound arc),
+      not a hole in the record.
+    -->
+    <p class="chart__absent">
+      This run recorded no value for this series in any period - absent, never zero.
+      @if (chart().absence; as sentence) {
+        {{ sentence }}
+      }
+    </p>
+  } @else {
+    <svg
+      class="chart__svg"
+      [attr.viewBox]="viewBox()"
+      role="img"
+      [attr.aria-label]="chart().label + ' per period, drawn stepwise; a gap is a period with no value'"
+    >
+      <!-- The fitted value axis: this element's own range, labelled at both ends (see the note). -->
+      <g class="chart__grid">
+        @for (tick of valueTicks(); track tick.value) {
+          <line
+            [attr.x1]="spark().left"
+            [attr.x2]="plotRight()"
+            [attr.y1]="tick.y"
+            [attr.y2]="tick.y"
+          />
+          <text class="chart__tick chart__tick--value" [attr.x]="spark().left - 8" [attr.y]="tick.y + 4">
+            {{ tickLabel(tick.value) }}
+          </text>
+        }
+      </g>
+
+      <!-- The mean, as the line the caption's figure describes - one number, two readings (FR-18). -->
+      @if (meanY() !== null) {
+        <line
+          class="chart__mean-line"
+          [attr.x1]="spark().left"
+          [attr.x2]="plotRight()"
+          [attr.y1]="meanY()"
+          [attr.y2]="meanY()"
+        />
+      }
+
+      <!-- Baseline first, so where the two coincide the disrupted line is the one on top. -->
+      @for (path of spark().baselinePaths; track $index) {
+        <path class="chart__baseline" [attr.d]="path" />
+      }
+      @for (path of spark().paths; track $index) {
+        <path class="chart__line" [attr.d]="path" />
+      }
+
+      <!--
+        The shared period cursor (FR-22): one signal on the store, drawn on every chart of the page
+        at the same period. Through the **centre** of the period's band - a period is an interval, so
+        its marker is not on an edge, and the line therefore falls through its own axis tick.
+      -->
+      @if (cursorAt() !== null) {
+        <line
+          class="chart__cursor"
+          [attr.x1]="cursorAt()"
+          [attr.x2]="cursorAt()"
+          [attr.y1]="spark().top"
+          [attr.y2]="plotBottom()"
+        />
+      }
+
+      <!-- The period axis. Ticks are whole periods; the title names what a period is. -->
+      <g class="chart__axis">
+        <line
+          [attr.x1]="spark().left"
+          [attr.x2]="plotRight()"
+          [attr.y1]="plotBottom()"
+          [attr.y2]="plotBottom()"
+        />
+        @for (tick of periodTicks(); track tick.period) {
+          <text class="chart__tick" [attr.x]="tick.x" [attr.y]="plotBottom() + 14">
+            {{ tick.period }}
+          </text>
+        }
+        <text
+          class="chart__axis-label"
+          [attr.x]="(spark().left + plotRight()) / 2"
+          [attr.y]="box().height - 4"
+        >
+          {{ axisLabel() }}
+        </text>
+      </g>
+    </svg>
+
+    <p class="chart__caption">
+      {{ rangeText() }} over {{ periodCount() }} periods
+      @if (chart().baseline) {
+        · dashed: undisrupted baseline
+      }
+      @if (meanText()) {
+        · dotted: {{ chart().meanLabel }}
+      }
+    </p>
+
+    <!--
+      What a gap means, and only when there is one. Two nullable columns, two different sentences,
+      neither of them zero - see `element-charts.ts`.
+    -->
+    @if (chart().absence; as sentence) {
+      @if (gapCount() > 0) {
+        <p class="chart__absence">
+          <span class="chart__gap-count">{{ gapCount() }} of {{ periodCount() }} periods</span>
+          {{ sentence }}
+        </p>
+      }
+    }
+  }
+
+  <!--
+    The explanatory sentence, on the enlarged chart only. It is what the double-click is for:
+    a grid of small charts is scanned, and the one a reader stops on is the one that has to explain
+    itself. On a small chart the same sentence is the figure's tooltip, so nothing is unreachable -
+    and nothing that is a *claim about the run* (the range caption, the gap count, the absence
+    sentence) is hidden at either size.
+  -->
+  @if (isLarge()) {
+    @if (chart().hint; as hint) {
+      <p class="chart__hint">{{ hint }}</p>
+    }
+  }
+</figure>

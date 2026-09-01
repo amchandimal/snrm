@@ -1,0 +1,2 @@
+period_length_value,period_length_unit,horizon_periods,rounding_policy,name
+1,DAY,10,NEAREST,Simulation verification

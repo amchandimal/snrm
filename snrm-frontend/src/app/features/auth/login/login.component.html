@@ -1,0 +1,53 @@
+<div class="login-wrap d-flex align-items-center justify-content-center">
+  <div class="card shadow-sm login-card">
+    <div class="card-body p-4">
+      <h1 class="h4 mb-1">SNRM</h1>
+      <p class="text-body-secondary small mb-4">Supply Network Resilience Modelling</p>
+
+      @if (error()) {
+        <div class="alert alert-danger py-2 small" role="alert">{{ error() }}</div>
+      }
+
+      <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
+        <div class="mb-3">
+          <label class="form-label" for="username">Username</label>
+          <input
+            id="username"
+            type="text"
+            class="form-control"
+            formControlName="username"
+            autocomplete="username"
+            [class.is-invalid]="form.controls.username.touched && form.controls.username.invalid"
+          />
+          <div class="invalid-feedback">A username is required.</div>
+        </div>
+
+        <div class="mb-4">
+          <label class="form-label" for="password">Password</label>
+          <input
+            id="password"
+            type="password"
+            class="form-control"
+            formControlName="password"
+            autocomplete="current-password"
+            [class.is-invalid]="form.controls.password.touched && form.controls.password.invalid"
+          />
+          <div class="invalid-feedback">A password is required.</div>
+        </div>
+
+        <button type="submit" class="btn btn-primary w-100" [disabled]="submitting()">
+          @if (submitting()) {
+            <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+          }
+          Sign in
+        </button>
+      </form>
+
+      <p class="text-body-secondary small mt-4 mb-0">
+        Credentials come from <code>snrm.auth.*</code> on the backend. With no
+        <code>SNRM_AUTH_PASSWORD_HASH</code> set, the application prints a generated password to its
+        log at startup.
+      </p>
+    </div>
+  </div>
+</div>

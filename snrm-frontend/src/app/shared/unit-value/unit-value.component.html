@@ -1,0 +1,57 @@
+<div class="unit-field">
+  <label class="unit-field__label" [for]="fieldId()">
+    {{ label() }}
+    @if (mixed()) {
+      <span class="unit-field__mixed">mixed</span>
+    }
+  </label>
+
+  <div class="unit-field__row">
+    <input
+      [id]="fieldId()"
+      type="number"
+      min="0"
+      step="any"
+      class="form-control form-control-sm unit-field__value"
+      [disabled]="disabled()"
+      [placeholder]="boxPlaceholder()"
+      [value]="displayValue()"
+      (input)="onInput($any($event.target).value)"
+      (blur)="commit()"
+      (keydown.enter)="commit()"
+    />
+
+    <select
+      class="form-select form-select-sm unit-field__unit"
+      [attr.aria-label]="label() + ' unit'"
+      [title]="unitTitle"
+      [disabled]="disabled()"
+      [value]="unit()"
+      (change)="onUnitChange($any($event.target).value)"
+    >
+      @for (option of units; track option) {
+        <option [value]="option">{{ abbreviations[option] }} · {{ unitOption(option) }}</option>
+      }
+    </select>
+
+    @if (clearable()) {
+      <button
+        type="button"
+        class="unit-field__clear"
+        [attr.aria-label]="'Clear ' + label()"
+        [title]="clearTitle()"
+        [disabled]="disabled() || clearDisabled()"
+        (click)="clear()"
+      >
+        ×
+      </button>
+    }
+  </div>
+
+  @if (message(); as text) {
+    <span class="unit-field__error">{{ text }}</span>
+  }
+  @if (hint(); as text) {
+    <span class="unit-field__hint">{{ text }}</span>
+  }
+</div>

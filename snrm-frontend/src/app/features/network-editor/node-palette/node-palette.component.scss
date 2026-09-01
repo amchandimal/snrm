@@ -1,0 +1,104 @@
+/* Palette tiles for the four node types. Colours come from `echelon-rules.ts` as inline
+   custom properties, so the canvas style and the tiles cannot drift apart. */
+
+.palette {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+}
+
+.palette__title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #6c757d;
+  margin: 0;
+}
+
+.palette__hint {
+  font-size: 0.75rem;
+  color: #6c757d;
+  margin: 0 0 0.25rem;
+  line-height: 1.35;
+}
+
+.palette__tile {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  width: 100%;
+  padding: 0.5rem 0.625rem;
+  border: 1px solid #dee2e6;
+  border-radius: 0.5rem;
+  background: #fff;
+  text-align: left;
+  cursor: grab;
+  transition:
+    border-color 0.12s ease,
+    box-shadow 0.12s ease;
+
+  &:hover:not(:disabled) {
+    border-color: var(--tile-accent);
+  }
+
+  &:active:not(:disabled) {
+    cursor: grabbing;
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+  }
+}
+
+.palette__tile--active {
+  border-color: var(--tile-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--tile-colour) 30%, transparent);
+}
+
+.palette__swatch {
+  flex: 0 0 auto;
+  width: 1.25rem;
+  height: 1.25rem;
+  background: var(--tile-colour);
+  border: 1px solid var(--tile-accent);
+}
+
+/* A second, colour-blind-safe channel for the type: the same silhouettes the canvas uses. */
+.palette__swatch--SUPPLIER {
+  border-radius: 0.25rem;
+}
+
+.palette__swatch--PLANT {
+  clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+  border: none;
+}
+
+.palette__swatch--DC {
+  border-radius: 50%;
+}
+
+.palette__swatch--CUSTOMER {
+  clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+  border: none;
+}
+
+.palette__label {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.palette__name {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #212529;
+}
+
+.palette__type {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.6875rem;
+  color: #6c757d;
+}

@@ -1,0 +1,191 @@
+/* The Gantt.
+ *
+ * A CSS grid of two columns - a fixed gutter for the target name, and an elastic track the bars are
+ * positioned in as percentages of the horizon. Percentages rather than pixels because the horizon is
+ * the coordinate system: the chart has to mean the same thing at any width, and a bar's left edge is
+ * "period 28 of 52", not "340px". */
+
+$gutter: 13rem;
+$row-height: 2.75rem;
+
+.timeline {
+  border: 1px solid #dee2e6;
+  border-radius: 0.5rem;
+  background: #fff;
+  overflow: hidden;
+}
+
+.timeline__head,
+.timeline__row {
+  display: grid;
+  grid-template-columns: $gutter 1fr;
+  align-items: stretch;
+}
+
+.timeline__head {
+  border-bottom: 1px solid #dee2e6;
+  background: #f8f9fa;
+  min-height: 2.25rem;
+}
+
+.timeline__gutter {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.0625rem;
+  padding: 0.375rem 0.75rem;
+  border-right: 1px solid #dee2e6;
+  min-width: 0;
+}
+
+.timeline__gutter-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #495057;
+}
+
+.timeline__gutter-note,
+.timeline__sublabel {
+  font-size: 0.6875rem;
+  color: #6c757d;
+}
+
+.timeline__label {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: #212529;
+  /* A long node name must not push the track out of alignment - the grid column is fixed. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A target the selected network does not contain. Drawn, not hidden: the bars exist and the count
+   in the sidebar says so. */
+.timeline__row--unresolved .timeline__label {
+  color: #8a6100;
+}
+
+.timeline__warn {
+  margin-left: 0.25rem;
+  color: #b3690f;
+  cursor: help;
+}
+
+/* ------------------------------------------------------------------------ the axis */
+
+.timeline__axis {
+  position: relative;
+  min-height: 2.25rem;
+}
+
+.timeline__tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid #dee2e6;
+}
+
+.timeline__tick-label {
+  position: absolute;
+  top: 0.375rem;
+  left: 0.25rem;
+  font-size: 0.6875rem;
+  color: #6c757d;
+  white-space: nowrap;
+}
+
+.timeline__axis-caption {
+  position: absolute;
+  right: 0.5rem;
+  bottom: 0.25rem;
+  font-size: 0.6875rem;
+  color: #6c757d;
+}
+
+/* ------------------------------------------------------------------------- the rows */
+
+.timeline__body {
+  max-height: 26rem;
+  overflow-y: auto;
+}
+
+.timeline__row + .timeline__row {
+  border-top: 1px solid #f1f3f5;
+}
+
+.timeline__track {
+  position: relative;
+  min-height: $row-height;
+  padding: 0.4375rem 0;
+}
+
+.timeline__gridline {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid #f1f3f5;
+}
+
+/* --------------------------------------------------------------------------- the bars */
+
+.timeline__bar {
+  position: absolute;
+  top: 0.4375rem;
+  height: $row-height - 0.875rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.375rem;
+  padding: 0 0.4375rem;
+  border: 1px solid #0a58ca;
+  border-radius: 0.25rem;
+  /* Severity as fill strength: the shape of a scenario is readable before any number is. The
+     component sets the actual colour per bar; this is the fallback for a bar with none. */
+  background: rgb(13 110 253);
+  color: #fff;
+  font-size: 0.6875rem;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: pointer;
+  transition: box-shadow 0.12s ease-in-out;
+}
+
+.timeline__bar:hover,
+.timeline__bar:focus-visible {
+  box-shadow: 0 0 0 0.15rem rgb(13 110 253 / 35%);
+  outline: none;
+}
+
+.timeline__bar--selected {
+  box-shadow: 0 0 0 0.15rem rgb(13 110 253 / 55%);
+  border-color: #052c65;
+}
+
+/* An event that does not occur in every replication is not a certainty, and must not be drawn as
+   one. */
+.timeline__bar--probabilistic {
+  border-style: dashed;
+}
+
+/* Its recovery is never observed, so any metric over it measures the truncation. */
+.timeline__bar--overrun {
+  border-color: #b02a37;
+  box-shadow: inset 0 0 0 1px #b02a37;
+}
+
+.timeline__bar-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.timeline__bar-severity {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}
+
+.timeline__empty {
+  padding: 2.5rem 1rem;
+  text-align: center;
+}

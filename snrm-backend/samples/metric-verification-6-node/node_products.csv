@@ -1,0 +1,7 @@
+node,product,demand_value,demand_time_unit,initial_inventory,safety_stock,holding_cost_value,holding_cost_time_unit
+CUST-1,WIDGET-A,40,DAY,0,0,0,DAY
+CUST-2,WIDGET-A,25,DAY,0,0,0,DAY
+DC-1,WIDGET-A,0,DAY,120,60,0.10,DAY
+DC-2,WIDGET-A,0,DAY,120,60,0.10,DAY
+PLANT-1,WIDGET-A,0,DAY,200,80,0.05,DAY
+SUP-1,WIDGET-A,0,DAY,300,100,0.02,DAY

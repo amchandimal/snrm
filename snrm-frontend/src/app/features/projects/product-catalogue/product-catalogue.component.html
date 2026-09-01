@@ -1,0 +1,243 @@
+<div class="container app-view">
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+      <li class="breadcrumb-item"><a routerLink="/projects">Projects</a></li>
+      <li class="breadcrumb-item">
+        <a [routerLink]="dashboardLink()">{{ project()?.name ?? 'Project' }}</a>
+      </li>
+      <li class="breadcrumb-item active" aria-current="page">Products</li>
+    </ol>
+  </nav>
+
+  <div class="d-flex align-items-baseline justify-content-between mb-3">
+    <div>
+      <h1 class="h3 mb-1">
+        Product catalogue
+        @if (projectId(); as id) {
+          <span class="id-chip ms-2">#{{ id }}</span>
+        }
+      </h1>
+      <p class="text-body-secondary mb-0">
+        The products of <strong>{{ project()?.name ?? 'this project' }}</strong>. Every configuration
+        variant shares this one catalogue, which is what makes their cost and service metrics
+        comparable.
+      </p>
+    </div>
+    <div class="d-flex gap-2">
+      <a class="btn btn-sm btn-outline-primary" [routerLink]="dashboardLink()">Back to networks</a>
+      <button
+        type="button"
+        class="btn btn-sm btn-outline-secondary"
+        [disabled]="store.isLoading() || !projectId()"
+        (click)="store.load(projectId()!)"
+      >
+        Refresh
+      </button>
+    </div>
+  </div>
+
+  @if (projectError(); as message) {
+    <div class="alert alert-danger" role="alert">{{ message }}</div>
+  }
+
+  @if (store.error(); as message) {
+    <div class="alert alert-danger d-flex justify-content-between align-items-start" role="alert">
+      <span>{{ message }}</span>
+      <button type="button" class="btn-close" aria-label="Dismiss" (click)="store.dismissError()"></button>
+    </div>
+  }
+
+  <div class="card shadow-sm mb-4">
+    <div class="card-body">
+      <form class="row g-2 align-items-start" [formGroup]="newProduct" (ngSubmit)="create()" novalidate>
+        <div class="col-12 col-sm">
+          <label class="form-label visually-hidden" for="new-product">New product name</label>
+          <input
+            id="new-product"
+            type="text"
+            class="form-control"
+            placeholder="New product name, e.g. Gearbox"
+            formControlName="name"
+            [class.is-invalid]="newProduct.controls.name.touched && newProduct.controls.name.invalid"
+          />
+          <div class="invalid-feedback">A name is required, up to 120 characters.</div>
+        </div>
+        <div class="col-12 col-sm-auto">
+          <label class="form-label visually-hidden" for="new-product-value">Unit value</label>
+          <input
+            id="new-product-value"
+            type="number"
+            min="0"
+            step="any"
+            class="form-control"
+            style="max-width: 12rem"
+            placeholder="Unit value"
+            formControlName="unitValue"
+            [class.is-invalid]="newProduct.controls.unitValue.touched && newProduct.controls.unitValue.invalid"
+          />
+          <div class="invalid-feedback">Must not be negative.</div>
+        </div>
+        <div class="col-12 col-sm-auto">
+          <button type="submit" class="btn btn-primary" [disabled]="store.creating() || !projectId()">
+            @if (store.creating()) {
+              <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+            }
+            Add product
+          </button>
+        </div>
+        <div class="col-12">
+          <p class="form-text mb-0">
+            The unit value is what one unit is worth. It weights unserved demand when service loss is
+            expressed in money - leave it at 0 if the study is measured in units rather
+            than currency.
+          </p>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  @if (store.isLoading()) {
+    <p class="text-body-secondary">Loading products…</p>
+  } @else if (store.isEmpty()) {
+    <div class="card shadow-sm border-warning">
+      <div class="card-body py-4">
+        <p class="mb-2 fw-semibold">This project has no products, and so it cannot be simulated yet.</p>
+        <p class="text-body-secondary small mb-2">
+          Demand is recorded per product, at a node. With an empty catalogue no node can be given
+          demand, and a simulation of a network with no demand at all is refused with
+          <code>NETWORK_HAS_NO_DEMAND</code> - every simulated metric would report perfect service
+          against every scenario, which is indistinguishable from a resilient network.
+        </p>
+        <p class="text-body-secondary small mb-0">
+          Add one above, or
+          <a [routerLink]="['/projects', projectId() ?? 0, 'import']">import a network</a>, whose
+          <code>products</code> sheet fills this catalogue for you.
+        </p>
+      </div>
+    </div>
+  } @else {
+    <div class="card shadow-sm">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th scope="col">Product</th>
+              <th scope="col">Unit value</th>
+              <th scope="col" class="d-none d-md-table-cell">Updated</th>
+              <th scope="col" class="text-end">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (product of store.products(); track product.id) {
+              <tr>
+                <td>
+                  @if (editingId() === product.id) {
+                    <label class="form-label visually-hidden" [for]="'edit-name-' + product.id">Name</label>
+                    <input
+                      [id]="'edit-name-' + product.id"
+                      type="text"
+                      class="form-control form-control-sm"
+                      [formControl]="editName"
+                      [class.is-invalid]="editName.touched && editName.invalid"
+                      (keyup.enter)="saveEdit(product)"
+                      (keyup.escape)="cancelEdit()"
+                    />
+                  } @else {
+                    <span class="fw-semibold">{{ product.name }}</span>
+                    <span class="id-chip ms-2">#{{ product.id }}</span>
+                  }
+                </td>
+                <td>
+                  @if (editingId() === product.id) {
+                    <label class="form-label visually-hidden" [for]="'edit-value-' + product.id">
+                      Unit value
+                    </label>
+                    <input
+                      [id]="'edit-value-' + product.id"
+                      type="number"
+                      min="0"
+                      step="any"
+                      class="form-control form-control-sm"
+                      style="max-width: 9rem"
+                      [formControl]="editUnitValue"
+                      [class.is-invalid]="editUnitValue.touched && editUnitValue.invalid"
+                      (keyup.enter)="saveEdit(product)"
+                      (keyup.escape)="cancelEdit()"
+                    />
+                  } @else {
+                    {{ product.unitValue }}
+                  }
+                </td>
+                <td class="d-none d-md-table-cell text-body-secondary small">
+                  @if (editingId() === product.id) {
+                    Both fields are sent - the endpoint replaces the product, so a name saved alone
+                    would reset the unit value to 0.
+                  } @else {
+                    {{ product.updatedAt | date: 'medium' }}
+                  }
+                </td>
+                <td class="text-end text-nowrap">
+                  @if (editingId() === product.id) {
+                    <button
+                      type="button"
+                      class="btn btn-sm btn-primary me-1"
+                      [disabled]="store.busyFor() === product.id"
+                      (click)="saveEdit(product)"
+                    >
+                      @if (store.busyFor() === product.id) {
+                        <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+                      } @else {
+                        Save
+                      }
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" (click)="cancelEdit()">
+                      Cancel
+                    </button>
+                  } @else {
+                    <button
+                      type="button"
+                      class="btn btn-sm btn-outline-secondary me-1"
+                      [disabled]="editingId() !== null"
+                      (click)="startEdit(product)"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn-sm btn-outline-danger"
+                      title="Delete this product. Its per-node demand, inventory and cost rows go with it across every network of this project."
+                      [disabled]="store.busyFor() !== null"
+                      (click)="askToDelete(product)"
+                    >
+                      Delete
+                    </button>
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <p class="text-body-secondary small mt-3 mb-0">
+      A product's per-node figures - demand, initial inventory, safety stock and holding cost - are
+      set in the network editor's property panel, one node at a time.
+    </p>
+  }
+</div>
+
+@if (pendingDelete(); as product) {
+  <app-confirm-dialog
+    title="Delete this product?"
+    [message]="'Delete “' + product.name + '” (#' + product.id + ') from this project. This cannot be undone.'"
+    [details]="deleteDetails()"
+    [requiredPhrase]="deletePhrase()"
+    phraseLabel="product name"
+    confirmLabel="Delete product"
+    [destructive]="true"
+    [busy]="store.busyFor() !== null"
+    (confirmed)="confirmDelete()"
+    (cancelled)="cancelDelete()"
+  />
+}

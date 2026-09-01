@@ -1,0 +1,104 @@
+<div class="fork-backdrop"></div>
+
+<div class="modal d-block" tabindex="-1" role="dialog" aria-modal="true" (click)="onBackdropClick($event)">
+  <div class="modal-dialog modal-dialog-centered" role="document">
+    <div class="modal-content shadow">
+      <div class="modal-header">
+        <h5 class="modal-title">This network is frozen</h5>
+        <button
+          type="button"
+          class="btn-close"
+          aria-label="Cancel"
+          [disabled]="busy()"
+          (click)="cancelled.emit()"
+        ></button>
+      </div>
+
+      <div class="modal-body">
+        <p>
+          A simulation run has been recorded against <strong>{{ network().name }}</strong>
+          (v{{ network().version }}), so its structure can no longer change - results stay
+          interpretable only beside the network that produced them.
+        </p>
+        <p class="small text-body-secondary">
+          Forking copies the nodes, links and per-node product parameters into a new configuration
+          variant that takes the next version number. <strong>The edit you just attempted is not
+          carried over</strong> - make it again on the variant, so the change is one you chose
+          explicitly.
+        </p>
+
+        <label class="form-label small fw-medium" for="fork-name">Name for the variant</label>
+        <input
+          id="fork-name"
+          type="text"
+          class="form-control"
+          [disabled]="busy()"
+          [value]="name()"
+          [placeholder]="network().name + ' (next version)'"
+          (input)="name.set($any($event.target).value)"
+          (keydown.enter)="submit()"
+        />
+        <div class="form-text">Leave empty to keep the same name and take the next version.</div>
+
+        <!--
+          The lever annotation. Optional, and phrased as intent because the fork
+          necessarily happens before the edit - see the component's Javadoc on why this is a note
+          rather than a structured diff.
+        -->
+        <label class="form-label small fw-medium mt-3" for="fork-lever">
+          What is this variant meant to change?
+        </label>
+        <input
+          id="fork-lever"
+          type="text"
+          class="form-control"
+          [disabled]="busy()"
+          [value]="leverNote()"
+          placeholder="e.g. +20% capacity at PLANT-1, backup supplier for DC-2"
+          (input)="leverNote.set($any($event.target).value)"
+          (keydown.enter)="submit()"
+        />
+        <div class="form-text">
+          Optional, and recorded on the variant. The comparison view shows it under this
+          configuration's column, which is what turns "this one recovers faster" into a statement
+          about a lever.
+        </div>
+
+        <!--
+          The third choice of FR-20. Set apart from the fork form above rather than sitting beside
+          it in the footer, because it is not a variation on forking - it is the opposite trade, and
+          the sentence beneath it is the whole decision the researcher is being asked to make.
+          Nothing is deleted from here: the button opens the typed confirmation.
+        -->
+        <hr />
+        <p class="fork-prompt__discard-lead small mb-2">
+          <strong>Or: keep this network and throw the results away.</strong> Fork to keep the
+          result and edit a copy; discard to say the run was a test - a model you ran only to see
+          whether it behaved. Deleting the last run holding this network frozen makes it editable
+          again, with nothing else to reset (FR-20).
+        </p>
+        <button
+          type="button"
+          class="btn btn-sm btn-outline-danger"
+          [disabled]="busy()"
+          title="Delete every simulation run of this network. You will be asked to type the network name and version first."
+          (click)="discardRequested.emit()"
+        >
+          Discard this network’s runs and edit in place…
+        </button>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" [disabled]="busy()" (click)="cancelled.emit()">
+          Keep viewing read-only
+        </button>
+        <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="submit()">
+          @if (busy()) {
+            <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+          }
+          Fork a variant and edit that
+        </button>
+      </div>
+    </div>
+  </div>
+</div>

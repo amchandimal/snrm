@@ -1,0 +1,229 @@
+/* Editor shell: palette · canvas · property panel, under a toolbar.
+
+   The whole view is a fixed-height flex column so the canvas can take the remaining space -
+   Cytoscape renders into a sized element and will not grow with its content. */
+
+:host {
+  display: block;
+  height: calc(100vh - 3.5rem);
+}
+
+.editor {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: #fff;
+}
+
+.editor__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.5rem 0.875rem;
+  border-bottom: 1px solid #dee2e6;
+  background: #f8f9fa;
+}
+
+.editor__breadcrumb {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  font-size: 0.875rem;
+}
+
+.editor__network {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-weight: 600;
+}
+
+.editor__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+}
+
+.editor__divider {
+  width: 1px;
+  height: 1.25rem;
+  background: #dee2e6;
+  margin: 0 0.25rem;
+}
+
+.editor__spacer {
+  flex: 1 1 auto;
+}
+
+/* The dirty indicator: four states, one dot. */
+.editor__save {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.8125rem;
+  color: #6c757d;
+  white-space: nowrap;
+}
+
+.editor__save-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: currentcolor;
+}
+
+.editor__save--saved {
+  color: #198754;
+}
+
+.editor__save--unsaved {
+  color: #b8860b;
+}
+
+.editor__save--saving {
+  color: #0d6efd;
+}
+
+.editor__save--error {
+  color: #dc3545;
+  font-weight: 600;
+}
+
+.editor__banner {
+  margin: 0.5rem 0.875rem 0;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+}
+
+.editor__body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.editor__palette {
+  flex: 0 0 11rem;
+  border-right: 1px solid #dee2e6;
+  overflow-y: auto;
+  background: #fbfbfc;
+}
+
+.editor__canvas {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.editor__loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  color: #6c757d;
+  background: rgb(255 255 255 / 70%);
+  z-index: 2;
+  pointer-events: none;
+}
+
+/* Wider than the pre-units panel: every duration and rate field now carries a unit dropdown beside
+   its number, and squeezing the two into 17rem left neither legible. */
+.editor__panel {
+  flex: 0 0 20rem;
+  border-left: 1px solid #dee2e6;
+  overflow-y: auto;
+  background: #fbfbfc;
+}
+
+/* The metrics panel - a column of its own between canvas and properties, present only
+   when toggled on. Stacking it inside the property panel would have made both scroll together, and
+   the point of the criticality table is to read it while selecting nodes. */
+.editor__metrics {
+  flex: 0 0 18rem;
+  border-left: 1px solid #dee2e6;
+  overflow-y: auto;
+  background: #fff;
+}
+
+/* The disruptions panel (FR-16) - a fourth column, on the same terms as the metrics one:
+   present only when toggled on, and scrolling independently of the property panel, because aiming an
+   event means selecting on the canvas while reading the list. */
+.editor__disruptions {
+  flex: 0 0 19rem;
+  border-left: 1px solid #dee2e6;
+  overflow-y: auto;
+  background: #fff;
+}
+
+/* The run panel (FR-17) - same terms as the other optional columns. Wider than the
+   disruptions panel: it has a chart to hold, and a curve narrower than ~20rem stops being a shape. */
+.editor__run {
+  flex: 0 0 22rem;
+  border-left: 1px solid #dee2e6;
+  overflow-y: auto;
+  background: #fff;
+}
+
+/* Progress of a run in flight, on the toolbar button - visible with the panel closed. */
+.editor__run-progress {
+  display: inline-block;
+  margin-left: 0.3125rem;
+  padding: 0 0.25rem;
+  border-radius: 0.25rem;
+  background: #0d6efd;
+  color: #fff;
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* How many elements the open scenario strikes, on the toolbar button. */
+.editor__struck-count {
+  display: inline-block;
+  min-width: 1.125rem;
+  margin-left: 0.3125rem;
+  padding: 0 0.25rem;
+  border-radius: 0.625rem;
+  background: #dc3545;
+  color: #fff;
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.125rem;
+  text-align: center;
+}
+
+/* On the toolbar button: the suite on screen no longer describes the network. */
+.editor__stale-dot {
+  display: inline-block;
+  width: 0.4375rem;
+  height: 0.4375rem;
+  margin-left: 0.3125rem;
+  border-radius: 50%;
+  background: #ffc107;
+  vertical-align: middle;
+}
+
+@media (max-width: 1200px) {
+  .editor__metrics {
+    flex-basis: 15rem;
+  }
+
+  .editor__disruptions {
+    flex-basis: 16rem;
+  }
+}
+
+@media (max-width: 900px) {
+  .editor__palette {
+    flex-basis: 8.5rem;
+  }
+
+  .editor__panel {
+    flex-basis: 16rem;
+  }
+}

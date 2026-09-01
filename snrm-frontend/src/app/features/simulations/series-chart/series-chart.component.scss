@@ -1,0 +1,145 @@
+/* One element series as a stepwise chart (FR-22). */
+
+:host {
+  display: block;
+}
+
+.chart__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.125rem;
+}
+
+.chart__label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #212529;
+}
+
+/* The enlarged chart is the one being read, so its title carries the weight of a heading. */
+.chart--large .chart__label {
+  font-size: 0.9375rem;
+}
+
+.chart__figures {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.chart__mean {
+  font-size: 0.75rem;
+  color: #6c757d;
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+  The at-cursor figure carries the cursor's own ink - the same grey the line is drawn in - so the
+  number and the line a reader is comparing it against are visibly one thing (FR-22).
+*/
+.chart__at-cursor {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #495057;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.chart__svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.chart__grid line {
+  stroke: #e9ecef;
+  stroke-width: 1;
+}
+
+.chart__axis line {
+  stroke: #ced4da;
+  stroke-width: 1;
+}
+
+.chart__tick {
+  fill: #6c757d;
+  font-size: 10px;
+  text-anchor: middle;
+}
+
+.chart__tick--value {
+  text-anchor: end;
+}
+
+.chart__axis-label {
+  fill: #495057;
+  font-size: 11px;
+  text-anchor: middle;
+}
+
+/*
+  The element's own series. Same hue as the performance curve's disrupted line: on this page they are
+  the same run, read at two scopes.
+*/
+.chart__line {
+  fill: none;
+  stroke: var(--snrm-curve-disrupted);
+  stroke-width: 1.75;
+  stroke-linejoin: round;
+  stroke-linecap: butt;
+}
+
+/* Dashed because it is the comparator, not a second result - the curve's own convention. */
+.chart__baseline {
+  fill: none;
+  stroke: var(--snrm-curve-baseline);
+  stroke-width: 1.25;
+  stroke-dasharray: 5 4;
+}
+
+/* Dotted, so it cannot be mistaken for either series. */
+.chart__mean-line {
+  stroke: #adb5bd;
+  stroke-width: 1;
+  stroke-dasharray: 1 3;
+}
+
+/*
+  The shared period cursor (FR-22). Solid and darker than the mean's dotted reference line and than
+  the grid, because it is a *position* rather than a value: the eye has to find the same x on eight
+  charts at once, and a third dash pattern would read as a third series.
+*/
+.chart__cursor {
+  stroke: #495057;
+  stroke-width: 1;
+  opacity: 0.65;
+}
+
+.chart__caption,
+.chart__hint,
+.chart__absence,
+.chart__absent {
+  margin: 0.25rem 0 0;
+  font-size: 0.75rem;
+  color: #6c757d;
+}
+
+/*
+  An absence is a reading, not a warning: it says what the run recorded, so it is grey like every
+  other caption rather than amber like a problem.
+*/
+.chart__absence,
+.chart__absent {
+  color: #6c757d;
+  font-style: italic;
+}
+
+.chart__gap-count {
+  font-style: normal;
+  font-weight: 600;
+  color: #495057;
+}

@@ -1,0 +1,91 @@
+<div class="confirm-backdrop"></div>
+
+<div
+  class="modal d-block"
+  tabindex="-1"
+  role="dialog"
+  aria-modal="true"
+  (click)="onBackdropClick($event)"
+>
+  <div class="modal-dialog modal-dialog-centered" role="document">
+    <div class="modal-content shadow">
+      <div class="modal-header">
+        <h5 class="modal-title">{{ title() }}</h5>
+        <button
+          type="button"
+          class="btn-close"
+          aria-label="Cancel"
+          [disabled]="busy()"
+          (click)="cancelled.emit()"
+        ></button>
+      </div>
+
+      <div class="modal-body">
+        <p class="mb-0">{{ message() }}</p>
+
+        @if (details().length) {
+          <ul class="mt-3 mb-0 small text-body-secondary">
+            @for (detail of details(); track detail) {
+              <li>{{ detail }}</li>
+            }
+          </ul>
+        }
+
+        <!--
+          Optional projected content, between the details and the typed phrase. Callers that project
+          nothing render exactly what they rendered before this existed - the same rule
+          `shared/file-drop`'s two optional inputs follow.
+
+          It is *above* the phrase field on purpose: the set deletion of FR-23 has to name the two
+          groups - what will be deleted, and what is frozen and will not - before the phrase is
+          accepted, so the user confirms a split they have seen.
+        -->
+        <ng-content />
+
+        @if (requiredPhrase(); as phrase) {
+          <hr />
+          <label class="form-label small mb-1" for="confirm-phrase">
+            Type the {{ phraseLabel() }} <code>{{ phrase }}</code> to confirm
+          </label>
+          <input
+            id="confirm-phrase"
+            type="text"
+            class="form-control"
+            autocomplete="off"
+            autocapitalize="off"
+            spellcheck="false"
+            [attr.aria-describedby]="'confirm-phrase-hint'"
+            [class.is-valid]="typed().length > 0 && phraseMatches()"
+            [class.is-invalid]="typed().length > 0 && !phraseMatches()"
+            [value]="typed()"
+            [disabled]="busy()"
+            (input)="onTyped($any($event.target).value)"
+            (keydown)="onPhraseKeydown($event)"
+          />
+          <div id="confirm-phrase-hint" class="form-text">
+            This cannot be undone.
+          </div>
+        }
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" [disabled]="busy()" (click)="cancelled.emit()">
+          {{ cancelLabel() }}
+        </button>
+        <button
+          type="button"
+          class="btn"
+          [class.btn-danger]="destructive()"
+          [class.btn-primary]="!destructive()"
+          [disabled]="!canConfirm()"
+          (click)="confirmed.emit()"
+        >
+          @if (busy()) {
+            <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+          }
+          {{ confirmLabel() }}
+        </button>
+      </div>
+    </div>
+  </div>
+</div>

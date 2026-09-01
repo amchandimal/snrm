@@ -1,0 +1,11 @@
+source,target,lead_time_value,lead_time_unit,capacity_value,capacity_time_unit,unit_cost,failure_prob
+SUP-EU,PLT-DE,12,h,400,DAY,0.35,0.01
+SUP-ASIA,PLT-DE,3,WEEK,1800,wk,2.60,0.05
+PLT-DE,DC-HUB,1,DAY,35,hr,0.30,0.01
+DC-HUB,DC-NORTH,2,days,150,DAY,0.40,0.02
+DC-HUB,DC-SOUTH,36,hrs,120,DAY,0.45,0.02
+DC-NORTH,DC-SOUTH,1,d,40,DAY,0.55,0.03
+DC-NORTH,CUS-A,6,h,60,DAY,0.15,0.01
+DC-NORTH,CUS-B,8,hours,50,DAY,0.18,0.01
+DC-SOUTH,CUS-C,1,DAY,45,DAY,0.22,0.02
+DC-SOUTH,CUS-D,4,H,55,DAY,0.16,0.01

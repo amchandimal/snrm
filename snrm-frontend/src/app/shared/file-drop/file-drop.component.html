@@ -1,0 +1,60 @@
+<div
+  class="file-drop"
+  [class.dragging]="dragging()"
+  [class.disabled]="disabled()"
+  role="button"
+  tabindex="0"
+  [attr.aria-disabled]="disabled() ? 'true' : null"
+  (click)="openPicker()"
+  (keydown)="onKeydown($event)"
+  (dragover)="onDragOver($event)"
+  (dragleave)="onDragLeave()"
+  (drop)="onDrop($event)"
+>
+  <input
+    #picker
+    type="file"
+    class="visually-hidden"
+    multiple
+    [accept]="accept()"
+    [disabled]="disabled()"
+    (change)="onPicked($event)"
+  />
+  <p class="mb-1 fw-semibold">
+    {{ prompt() ?? 'Drop the CSV files, an Excel workbook or an XML document here' }}
+  </p>
+  @if (hint(); as hintText) {
+    <p class="text-body-secondary small mb-0">{{ hintText }}</p>
+  } @else {
+    <p class="text-body-secondary small mb-0">
+      or click to choose. Either <code>nodes.csv</code>, <code>links.csv</code>,
+      <code>products.csv</code>, <code>node_products.csv</code> and <code>network_meta.csv</code>; or one
+      <code>.xlsx</code> whose sheets carry those names; or one <code>.xml</code> exported from SNRM,
+      which carries the canvas layout too.
+    </p>
+  }
+</div>
+
+<p class="text-body-secondary small mt-2 mb-1">{{ summary() }}</p>
+
+@if (files().length) {
+  <ul class="list-group list-group-flush chosen">
+    @for (file of files(); track file.name + file.size) {
+      <li class="list-group-item d-flex justify-content-between align-items-center py-1 px-0">
+        <span class="text-truncate">
+          <span class="fw-semibold">{{ file.name }}</span>
+          <span class="text-body-secondary small ms-2">{{ size(file) }}</span>
+        </span>
+        <button
+          type="button"
+          class="btn btn-sm btn-link text-danger p-0"
+          [disabled]="disabled()"
+          [attr.aria-label]="'Remove ' + file.name"
+          (click)="remove(file); $event.stopPropagation()"
+        >
+          Remove
+        </button>
+      </li>
+    }
+  </ul>
+}

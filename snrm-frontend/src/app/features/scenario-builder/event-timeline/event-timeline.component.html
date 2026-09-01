@@ -1,0 +1,81 @@
+<div class="timeline">
+  <header class="timeline__head">
+    <div class="timeline__gutter">
+      <span class="timeline__gutter-title">Target</span>
+      <span class="timeline__gutter-note" [title]="'One period is ' + periodLabel() + '.'">
+        period {{ periodLabel() }}
+      </span>
+    </div>
+
+    <div class="timeline__axis">
+      @for (tick of ticks(); track tick.period) {
+        <span class="timeline__tick" [style.left.%]="tick.percent">
+          <span class="timeline__tick-label">{{ tick.period }}</span>
+        </span>
+      }
+      <span class="timeline__axis-caption">{{ horizonLabel() }}</span>
+    </div>
+  </header>
+
+  @if (isEmpty()) {
+    <div class="timeline__empty">
+      <p class="mb-1">This scenario has no events yet.</p>
+      <p class="text-body-secondary small mb-3">
+        An event names what it strikes - a node, a link, or every node carrying a region tag - and
+        when, as a real duration from the start of the horizon.
+      </p>
+      <button type="button" class="btn btn-sm btn-primary" (click)="addRequested.emit()">
+        Add the first event
+      </button>
+    </div>
+  } @else {
+    <div class="timeline__body">
+      @for (row of rows(); track row.target.key) {
+        <div class="timeline__row" [class.timeline__row--unresolved]="row.target.unresolved">
+          <div class="timeline__gutter">
+            <span class="timeline__label" [title]="row.target.label">{{ row.target.label }}</span>
+            <span class="timeline__sublabel">
+              {{ row.target.sublabel }}
+              @if (row.target.unresolved) {
+                <span
+                  class="timeline__warn"
+                  title="This target is not in the network selected above. A scenario is project-scoped, so its events outlive the network they were authored against. The bars are still drawn; saving an edit against this network would be refused."
+                >
+                  ⚠
+                </span>
+              }
+            </span>
+          </div>
+
+          <div class="timeline__track">
+            @for (tick of ticks(); track tick.period) {
+              <span class="timeline__gridline" [style.left.%]="tick.percent"></span>
+            }
+
+            @for (bar of row.bars; track bar.event.id) {
+              <button
+                type="button"
+                class="timeline__bar"
+                [class.timeline__bar--selected]="bar.event.id === selectedEventId()"
+                [class.timeline__bar--probabilistic]="bar.event.probability < 1"
+                [class.timeline__bar--overrun]="bar.exceedsHorizon"
+                [style.left.%]="bar.leftPercent"
+                [style.width.%]="bar.widthPercent"
+                [style.backgroundColor]="barBackground(bar)"
+                [attr.aria-pressed]="bar.event.id === selectedEventId()"
+                [title]="barTooltip(bar)"
+                (click)="select(bar)"
+                (keydown)="onBarKeydown($event, bar)"
+              >
+                <!-- The declared units, never the period count: the bar is *positioned* by the
+                     conversion and *labelled* by what the user typed. -->
+                <span class="timeline__bar-label">{{ bar.label }}</span>
+                <span class="timeline__bar-severity">{{ percent(bar.event.severity) }}</span>
+              </button>
+            }
+          </div>
+        </div>
+      }
+    </div>
+  }
+</div>

@@ -1,0 +1,7 @@
+name,type,capacity_value,capacity_time_unit,processing_time_value,processing_time_unit,fixed_cost,var_cost,failure_prob,region,pos_x,pos_y
+SUP-1,SUPPLIER,500,DAY,0,DAY,1000,2,0.02,EU-West,120,260
+PLANT-1,PLANT,400,DAY,1,DAY,5000,5,0.01,EU-West,380,260
+DC-1,DC,350,DAY,0,DAY,1200,1,0.01,EU-North,640,180
+DC-2,DC,350,DAY,0,DAY,1200,1,0.03,EU-South,640,340
+CUST-1,CUSTOMER,,DAY,0,DAY,0,0,0,EU-North,900,140
+CUST-2,CUSTOMER,,DAY,0,DAY,0,0,0,EU-South,900,380

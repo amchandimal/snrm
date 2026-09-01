@@ -1,0 +1,292 @@
+<section class="event-editor" aria-label="Disruption event">
+  <header class="event-editor__head">
+    <h2 class="event-editor__title">{{ title() }}</h2>
+    <button
+      type="button"
+      class="btn-close"
+      aria-label="Close the event editor"
+      [disabled]="busy()"
+      (click)="cancelled.emit()"
+    ></button>
+  </header>
+
+  <div class="event-editor__body">
+    <!-- ------------------------------------------------------------------ target -->
+    @if (isAimed()) {
+      <!-- Aimed from the canvas (FR-16). No picker: the target was chosen by selecting it
+           on the network, which is the gesture this exists to replace an id dropdown with. -->
+      <div class="event-field">
+        <span class="event-label">Strikes</span>
+        <ul class="event-aimed">
+          @for (target of aimedTargets(); track $index) {
+            <li class="event-aimed__item">
+              <span class="event-aimed__label">{{ target.label }}</span>
+              <span class="event-aimed__kind">{{ target.targetType.toLowerCase() }}</span>
+            </li>
+          }
+        </ul>
+        @if (aimedTargets().length > 1) {
+          <span class="event-hint">
+            One event per target, identical in every other field. Change the canvas selection to
+            re-aim - the window and severity below survive it.
+          </span>
+        } @else {
+          <span class="event-hint">Selected on the canvas. Select something else to re-aim.</span>
+        }
+      </div>
+    } @else {
+      <div class="event-field">
+        <label class="event-label" for="event-target-type">Strikes</label>
+        <select
+          id="event-target-type"
+          class="form-select form-select-sm"
+          [disabled]="busy()"
+          [value]="targetType()"
+          (change)="onTargetType($any($event.target).value)"
+        >
+          @for (type of targetTypes; track type) {
+            <option [value]="type">{{ type }}</option>
+          }
+        </select>
+        <span class="event-hint">
+          A REGION event hits every node carrying the tag - how a correlated geographic disruption is
+          expressed.
+        </span>
+      </div>
+    }
+
+    @if (needsId()) {
+      <div class="event-field">
+        <label class="event-label" for="event-target-id">
+          {{ targetType() === 'NODE' ? 'Node' : 'Link' }}
+        </label>
+        <select
+          id="event-target-id"
+          class="form-select form-select-sm"
+          [disabled]="busy()"
+          [value]="targetIdText()"
+          (change)="onTargetId($any($event.target).value)"
+        >
+          <option value="" disabled>Pick one…</option>
+          @if (targetType() === 'NODE') {
+            @for (node of nodes(); track node.id) {
+              <option [value]="node.id.toString()">
+                {{ node.name }} · {{ node.type.toLowerCase() }}
+              </option>
+            }
+          } @else {
+            @for (link of linkOptions(); track link.id) {
+              <option [value]="link.id.toString()">{{ link.label }}</option>
+            }
+          }
+        </select>
+      </div>
+    }
+
+    @if (needsRegion()) {
+      <div class="event-field">
+        <label class="event-label" for="event-region">Region tag</label>
+        <input
+          id="event-region"
+          type="text"
+          class="form-control form-control-sm"
+          list="event-region-options"
+          placeholder="e.g. EU-West"
+          [disabled]="busy()"
+          [value]="targetRegion() ?? ''"
+          (change)="onRegion($any($event.target).value)"
+        />
+        <datalist id="event-region-options">
+          @for (region of regions(); track region.region) {
+            <option [value]="region.region">{{ region.nodeCount }} nodes</option>
+          }
+        </datalist>
+
+        @if (regionPreview(); as preview) {
+          @if (preview.nodeCount === 0) {
+            <p class="event-warn mb-0">
+              No node in this network carries “{{ preview.region }}”, so this event would strike
+              nothing. Saving it is refused - a scenario that disrupts nothing produces a result that
+              reads like resilience.
+            </p>
+          } @else {
+            <p class="event-preview mb-0">
+              Resolves to {{ preview.nodeCount }} node{{ preview.nodeCount === 1 ? '' : 's' }}:
+              @for (node of preview.nodes; track node.id) {
+                <span class="event-preview__node">{{ node.name }}</span>
+              }
+            </p>
+          }
+        } @else if (regionPreviewError()) {
+          <!-- No `as` binding: it is only allowed on the primary @if. Reading the signal twice is
+               cheap and cannot go stale between the two reads. -->
+          <span class="event-warn">{{ regionPreviewError() }}</span>
+        }
+      </div>
+    }
+
+    <hr class="event-rule" />
+
+    <!-- ------------------------------------------------------------------ timing -->
+    <app-unit-value
+      label="Starts after"
+      fieldId="event-start-offset"
+      [kind]="'duration'"
+      placeholder="0"
+      [value]="startOffset().value"
+      [unit]="startOffset().unit"
+      [disabled]="busy()"
+      hint="Measured from the start of the horizon - a real duration, not a period index, so the same scenario means the same thing against every variant."
+      (valueCommitted)="onStartOffsetValue($event)"
+      (unitPicked)="onStartOffsetUnit($event)"
+    />
+
+    <app-unit-value
+      label="Lasts"
+      fieldId="event-duration"
+      [kind]="'duration'"
+      [value]="duration().value"
+      [unit]="duration().unit"
+      [disabled]="busy()"
+      hint="Also parameterises the recovery profile below."
+      (valueCommitted)="onDurationValue($event)"
+      (unitPicked)="onDurationUnit($event)"
+    />
+
+    <!-- The bar is positioned by this conversion and labelled by the declared units above. -->
+    <p class="event-periods mb-0">{{ timingHint() }}</p>
+
+    @if (windowVanishes()) {
+      <p class="event-warn mb-0">
+        On this network's period the window rounds to zero - the event would last no time at all.
+        Use a longer duration, or a finer period.
+      </p>
+    }
+
+    @if (exceedsHorizon()) {
+      <p class="event-warn mb-0">
+        This ends at period {{ endPeriod() }}, after the horizon of {{ horizonPeriods() }}. The API
+        refuses it: the recovery would never be observed, and any metric over it would measure the
+        truncation. Extend the horizon, shorten the event, or start it earlier.
+      </p>
+    }
+
+    <hr class="event-rule" />
+
+    <!-- --------------------------------------------------------------- severity -->
+    <div class="event-field">
+      <label class="event-label" for="event-severity">
+        Severity
+        <span class="event-value">{{ severityPercent() }}%</span>
+      </label>
+      <div class="event-slider">
+        <input
+          id="event-severity"
+          type="range"
+          class="form-range"
+          min="0"
+          max="1"
+          step="0.01"
+          [disabled]="busy()"
+          [value]="severityText()"
+          (input)="onSeverity($any($event.target).value)"
+        />
+        <input
+          type="number"
+          class="form-control form-control-sm event-number"
+          min="0"
+          max="100"
+          step="1"
+          aria-label="Severity, percent"
+          [disabled]="busy()"
+          [value]="severityPercentText()"
+          (change)="onSeverityPercent($any($event.target).value)"
+        />
+      </div>
+      <span class="event-hint">{{ severityHint() }}</span>
+    </div>
+
+    <!-- -------------------------------------------------------- recovery profile -->
+    <div class="event-field">
+      <label class="event-label" for="event-recovery">Recovery profile</label>
+      <select
+        id="event-recovery"
+        class="form-select form-select-sm"
+        [disabled]="busy()"
+        [value]="recoveryProfile()"
+        (change)="onRecoveryProfile($any($event.target).value)"
+      >
+        @for (profile of recoveryProfiles; track profile) {
+          <option [value]="profile">{{ profile }}</option>
+        }
+      </select>
+      <span class="event-hint">{{ recoveryHints[recoveryProfile()] }}</span>
+    </div>
+
+    <!-- ------------------------------------------------------------ probability -->
+    <div class="event-field">
+      <label class="event-label" for="event-probability">
+        Probability
+        <span class="event-value">{{ probabilityPercent() }}%</span>
+      </label>
+      <div class="event-slider">
+        <input
+          id="event-probability"
+          type="range"
+          class="form-range"
+          min="0"
+          max="1"
+          step="0.01"
+          [disabled]="busy()"
+          [value]="probabilityText()"
+          (input)="onProbability($any($event.target).value)"
+        />
+        <input
+          type="number"
+          class="form-control form-control-sm event-number"
+          min="0"
+          max="100"
+          step="1"
+          aria-label="Probability, percent"
+          [disabled]="busy()"
+          [value]="probabilityPercentText()"
+          (change)="onProbabilityPercent($any($event.target).value)"
+        />
+      </div>
+      <span class="event-hint">
+        How often the event occurs across replications. At 100% the scenario is a single future; below
+        it, a distribution of them.
+      </span>
+    </div>
+
+    @if (blocker(); as message) {
+      <p class="event-error mb-0">{{ message }}</p>
+    }
+
+    @if (error(); as message) {
+      <p class="event-error mb-0">{{ message }}</p>
+    }
+  </div>
+
+  <footer class="event-editor__foot">
+    @if (!isNew()) {
+      <button
+        type="button"
+        class="btn btn-sm btn-outline-danger me-auto"
+        [disabled]="busy()"
+        (click)="requestDelete()"
+      >
+        Delete event
+      </button>
+    }
+    <button type="button" class="btn btn-sm btn-outline-secondary" [disabled]="busy()" (click)="cancelled.emit()">
+      Cancel
+    </button>
+    <button type="button" class="btn btn-sm btn-primary" [disabled]="!canSave()" (click)="save()">
+      @if (busy()) {
+        <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+      }
+      {{ saveLabel() }}
+    </button>
+  </footer>
+</section>

@@ -1,0 +1,38 @@
+# SNRM deployment baseline: Spring Boot app + MySQL 8.
+# Dev workflow: `docker compose up -d mysql` + `mvnw.cmd spring-boot:run` (profile 'local').
+# Full stack:  `docker compose up --build -d` (app runs with profile 'docker').
+services:
+  mysql:
+    image: mysql:8
+    container_name: snrm-mysql
+    environment:
+      MYSQL_DATABASE: snrm
+      MYSQL_USER: snrm
+      MYSQL_PASSWORD: snrm          # development-only credentials
+      MYSQL_ROOT_PASSWORD: root
+    # Host 3307 avoids clashing with a locally installed MySQL on 3306.
+    # Container-internal port stays 3306, so the 'docker' profile is unaffected.
+    ports:
+      - "3307:3306"
+    volumes:
+      - snrm-mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u$$MYSQL_USER -p$$MYSQL_PASSWORD"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build: .
+    image: snrm-backend
+    container_name: snrm-app
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+    ports:
+      - "8080:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+volumes:
+  snrm-mysql-data:

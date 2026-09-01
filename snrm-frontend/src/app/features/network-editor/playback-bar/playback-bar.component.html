@@ -1,0 +1,92 @@
+<!--
+  The transport "Visual playback" (FR-18). Rendered only while playback is enabled, so
+  every control below has a run behind it and none of them needs a disabled state of its own.
+-->
+<div class="playback-bar" role="group" aria-label="Simulation playback">
+  <button
+    type="button"
+    class="playback-bar__button playback-bar__button--primary"
+    [attr.aria-label]="playback.playing() ? 'Pause playback' : 'Play the run'"
+    [title]="playback.playing() ? 'Pause (Space)' : 'Play (Space)'"
+    (click)="playback.toggle()"
+  >
+    {{ playback.playing() ? '⏸' : '▶' }}
+  </button>
+
+  <button
+    type="button"
+    class="playback-bar__button"
+    aria-label="Step back one period"
+    title="Step back one period (←)"
+    (click)="playback.stepBack()"
+  >
+    ⏮
+  </button>
+
+  <button
+    type="button"
+    class="playback-bar__button"
+    aria-label="Step forward one period"
+    title="Step forward one period (→)"
+    (click)="playback.stepForward()"
+  >
+    ⏭
+  </button>
+
+  <button
+    type="button"
+    class="playback-bar__button"
+    aria-label="Restart from the first period"
+    title="Restart from period 0"
+    (click)="playback.restart()"
+  >
+    ⟲
+  </button>
+
+  <!--
+    The scrub bar spans 0…lastPeriod - indices of RUN_TIMESERIES, not 1…horizon. Period 0 is a real
+    period of the run (the sample's chain is still filling in it), so an off-by-one here would hide
+    the one period the warm-up is most visible in.
+  -->
+  <input
+    class="playback-bar__scrub"
+    type="range"
+    min="0"
+    step="1"
+    [max]="lastPeriodText()"
+    [value]="periodText()"
+    aria-label="Scrub to a period"
+    (input)="onScrub($any($event.target).value)"
+  />
+
+  <span class="playback-bar__clock" aria-live="off">{{ clock() }}</span>
+
+  <!--
+    The same preference the time-settings dialog writes: both go through
+    PlaybackStore.setSpeed into the root PlaybackPreferencesService, so this network's pace is
+    remembered on this device whichever control set it. [selected] rather than [value] on the
+    select, for the reason the dialog states: a [value] binding is applied before @for has created
+    any option.
+  -->
+  <select
+    class="playback-bar__speed"
+    aria-label="Playback speed"
+    title="Simulation periods per real-world second - remembered for this network on this device"
+    (change)="onSpeed($any($event.target).value)"
+  >
+    @for (option of speedLadder; track option) {
+      <option [value]="option" [selected]="option === playback.speed()">
+        {{ speedLabel(option) }}
+      </option>
+    }
+  </select>
+
+  <!--
+    A run recorded before the per-element series existed, or one whose read failed. The
+    clock, the scrubber and the report all still work - only the canvas channels are dark - so this
+    is a note rather than a disabled transport.
+  -->
+  @if (playback.elementNote(); as note) {
+    <span class="playback-bar__note" role="note">{{ note }}</span>
+  }
+</div>

@@ -1,0 +1,189 @@
+<div class="card shadow-sm mt-4">
+  <div class="card-header bg-white">
+    <h2 class="h6 mb-1">Restore a project archive</h2>
+    <p class="text-body-secondary small mb-0">
+      A project archive is a whole experiment in one file - every network, the product catalogue,
+      every disruption scenario, and every completed simulation run with its parameters, seed,
+      metric results and time series. Export one from any project's dashboard.
+    </p>
+  </div>
+
+  <div class="card-body">
+    <!--
+      Said before the file is chosen, not in the report afterwards: both rules are irreversible in
+      the ordinary sense and neither is guessable from a button labelled "Restore".
+
+      The wording comes from `archive-rules.ts` rather than from here, because the first of the two
+      is also stated on the export side by the FR-24 subset confirmation, and one rule said in two
+      places has to be one string.
+    -->
+    <ul class="small text-body-secondary mb-3">
+      @for (rule of rules; track rule.lead) {
+        <li><strong>{{ rule.lead }}</strong> {{ rule.body }}</li>
+      }
+    </ul>
+
+    <app-file-drop
+      accept=".zip"
+      prompt="Drop a project archive (.zip) here"
+      [hint]="dropHint"
+      [files]="store.files()"
+      [disabled]="store.busy()"
+      (added)="addFiles($event)"
+      (removed)="store.removeFile()"
+    />
+
+    <div class="row g-2 align-items-start mt-3">
+      <div class="col-12 col-sm">
+        <label class="form-label small mb-1" for="restore-name">
+          Name for the restored project <span class="text-body-secondary">(optional)</span>
+        </label>
+        <input
+          id="restore-name"
+          type="text"
+          class="form-control"
+          placeholder="Leave blank to keep the archived name"
+          [formControl]="nameControl"
+          [class.is-invalid]="nameControl.touched && nameControl.invalid"
+        />
+        <div class="invalid-feedback">Up to 160 characters.</div>
+        <div class="form-text">
+          If you already have a project by that name, the restore is suffixed rather than refused.
+        </div>
+      </div>
+      <div class="col-12 col-sm-auto align-self-end">
+        <button
+          type="button"
+          class="btn btn-primary"
+          [disabled]="!store.canRestore()"
+          (click)="restore()"
+        >
+          @if (store.busy()) {
+            <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+          }
+          Restore into a new project
+        </button>
+      </div>
+    </div>
+
+    <!--
+      The problem detail verbatim, never a generic toast. ARCHIVE_UNREADABLE says *why* - not a zip,
+      no bundle.json, or a format version written by a later build of the tool - and the three have
+      different remedies.
+    -->
+    @if (store.error(); as message) {
+      <div class="alert alert-danger mt-3 mb-0 d-flex justify-content-between align-items-start" role="alert">
+        <div>
+          <p class="fw-semibold mb-1">This file could not be read as a project archive.</p>
+          <p class="mb-0 small">{{ message }}</p>
+        </div>
+        <button type="button" class="btn-close" aria-label="Dismiss" (click)="store.dismissError()"></button>
+      </div>
+    }
+  </div>
+
+  @if (store.report(); as report) {
+    <div class="card-body border-top">
+      <div
+        class="alert mb-3"
+        [class.alert-success]="report.engineMatches"
+        [class.alert-warning]="!report.engineMatches"
+        role="alert"
+      >
+        {{ store.headline() }}
+      </div>
+
+      <!--
+        The one thing on this screen that can invalidate a comparison, in the backend's own words.
+        A warning and not a refusal: an archive's purpose is to be legible later, and
+        "later" is exactly when the engine has moved on.
+      -->
+      @if (store.engineWarning(); as warning) {
+        <div class="alert alert-danger" role="alert">
+          <p class="fw-semibold mb-1">
+            These results were computed by a different simulation engine
+            @if (report.engineVersion) {
+              <span class="fw-normal">(archive: {{ report.engineVersion }})</span>
+            }
+          </p>
+          <p class="mb-0 small">{{ warning }}</p>
+        </div>
+      }
+
+      @if (store.findings().length) {
+        <h3 class="h6 mb-2">
+          Findings
+          <span class="text-body-secondary small fw-normal">- most consequential first</span>
+        </h3>
+        <ul class="list-group list-group-flush findings mb-3">
+          @for (finding of store.findings(); track $index) {
+            <li class="list-group-item px-0">
+              <div class="d-flex flex-wrap align-items-baseline gap-2 mb-1">
+                <span [class]="severityClass(finding.severity)">
+                  {{ severityLabel(finding.severity) }}
+                </span>
+                <code class="small">{{ finding.code }}</code>
+                @if (finding.subject) {
+                  <span class="text-body-secondary small">{{ finding.subject }}</span>
+                }
+              </div>
+              <p class="mb-0 small">{{ finding.message }}</p>
+            </li>
+          }
+        </ul>
+      } @else {
+        <p class="small text-body-secondary">
+          No findings: the restore reproduced the archived experiment exactly.
+        </p>
+      }
+
+      <h3 class="h6 mb-2">What arrived</h3>
+      <div class="table-responsive mb-2">
+        <table class="table table-sm align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th scope="col"></th>
+              <th scope="col" class="text-end">In the archive</th>
+              <th scope="col" class="text-end">Restored</th>
+              <th scope="col" class="text-end">Missing</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of store.counts(); track row.label) {
+              <tr [class.table-warning]="row.shortfall > 0">
+                <td>{{ row.label }}</td>
+                <td class="text-end">{{ row.source ?? '-' }}</td>
+                <td class="text-end">{{ row.restored }}</td>
+                <td class="text-end">
+                  @if (row.shortfall > 0) {
+                    <strong>{{ row.shortfall }}</strong>
+                  } @else {
+                    <span class="text-body-secondary">-</span>
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      <p class="small text-body-secondary">
+        A shortfall is always explained by a finding above. An event whose target no longer resolves
+        is <em>not</em> a shortfall - it is restored and left unresolvable, so a scenario that
+        refused to run still refuses to run rather than running with a disruption silently missing.
+      </p>
+
+      @if (store.provenanceNote(); as note) {
+        <p class="small text-body-secondary">{{ note }}</p>
+      }
+
+      <div class="d-flex flex-wrap gap-2 mt-3">
+        <a class="btn btn-primary" [routerLink]="projectLink(report.projectId)">
+          Open “{{ report.projectName }}”
+        </a>
+        <button type="button" class="btn btn-outline-secondary" (click)="restoreAnother()">
+          Restore another archive
+        </button>
+      </div>
+    </div>
+  }
+</div>
