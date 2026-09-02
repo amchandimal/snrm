@@ -8,7 +8,7 @@ import { AppEnvironment } from './environment.model';
  */
 export const environment: AppEnvironment = {
   production: true,
-  apiBaseUrl: '/api/v1',
+  apiBaseUrl: 'https://snrm.sustainalens.com/api/v1',
   jobPollIntervalMs: 2500,
   jobPollTimeoutMs: 30 * 60 * 1000,
 };

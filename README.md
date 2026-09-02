@@ -244,6 +244,7 @@ characters, and restart. Both are read as environment variables; neither is ever
 | `SNRM_AUTH_PASSWORD_HASH` | BCrypt hash of the login password | generated at startup |
 | `SNRM_JWT_SECRET` | HMAC-SHA256 signing key, ≥ 32 characters | generated at startup |
 | `SNRM_JWT_TTL` | Token lifetime, ISO-8601 duration | `PT8H` |
+| `SNRM_CORS_ORIGINS` | Browser origins allowed to call the API, comma-separated | `https://amchandimal.github.io` |
 | `SPRING_PROFILES_ACTIVE` | Configuration profile | `local` |
 
 ---

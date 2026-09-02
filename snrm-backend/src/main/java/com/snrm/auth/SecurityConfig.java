@@ -7,7 +7,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
+import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -21,12 +23,17 @@ import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.util.StringUtils;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
+import java.time.Duration;
 import java.util.HexFormat;
+import java.util.List;
 
 /**
  * Stateless JWT security for the whole API.
@@ -46,19 +53,33 @@ import java.util.HexFormat;
  * works without setup — every token issued before a restart then stops verifying after it, which
  * the log says plainly.
  *
- * <p><strong>CORS is deliberately absent.</strong> It would be restricted to the SPA origin, but the
- * Angular client does not call this API yet and guessing its origin here would be configuration
- * nobody has validated. Add it with the first cross-origin request, not before.
+ * <p><strong>CORS is an allow-list, and it admits nothing unless configured.</strong>
+ * {@code snrm.cors.allowed-origins} names the origins a browser may call this API from. It can
+ * stay unset for the development setup, where {@code ng serve} proxies {@code /api} here and the
+ * browser therefore sees one origin; it is set when the compiled bundle is hosted elsewhere and
+ * calls this API by absolute URL. With no origins configured, no cross-origin request is answered
+ * at all — the behaviour this class had before the property existed.
+ *
+ * <p>Two details of that configuration are load-bearing rather than boilerplate.
+ * {@code Content-Disposition} is <em>exposed</em>, because every export and archive download reads
+ * its filename off that header, and a header the browser will not surface is a header the client
+ * cannot read. And credentials are <em>not</em> allowed: this API authenticates with a bearer
+ * token the client attaches itself, so no cookie has to cross the origin boundary, and refusing
+ * credentials means the allow-list is not the only thing standing between a hostile page and an
+ * authenticated session.
  */
 @Configuration
 @EnableWebSecurity
-@EnableConfigurationProperties(AuthProperties.class)
+@EnableConfigurationProperties({AuthProperties.class, CorsProperties.class})
 public class SecurityConfig {
 
     private static final Logger log = LoggerFactory.getLogger(SecurityConfig.class);
 
     /** HS256 needs a key of at least 256 bits; anything shorter is rejected by Nimbus. */
     private static final int MINIMUM_SECRET_BYTES = 32;
+
+    /** How long a browser may reuse one preflight answer. */
+    private static final Duration PREFLIGHT_CACHE = Duration.ofHours(1);
 
     /** Paths reachable without a token. Everything else is authenticated. */
     private static final String[] PUBLIC_PATHS = {
@@ -72,6 +93,10 @@ public class SecurityConfig {
             ProblemAccessDeniedHandler accessDeniedHandler) throws Exception {
         http
                 .csrf(AbstractHttpConfigurer::disable)
+                // Picks up the CorsConfigurationSource bean below. It has to be registered here
+                // rather than on the MVC side: a preflight OPTIONS carries no credential, so the
+                // filter that answers it must run before the one that would reject it as anonymous.
+                .cors(Customizer.withDefaults())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.POST, AuthController.LOGIN_PATH).permitAll()
@@ -86,6 +111,47 @@ public class SecurityConfig {
                         .authenticationEntryPoint(authenticationEntryPoint)
                         .accessDeniedHandler(accessDeniedHandler));
         return http.build();
+    }
+
+    /**
+     * The cross-origin allow-list, or nothing at all when none is configured.
+     *
+     * <p>Returning {@code null} from the source is how this API declines to be a CORS API: the
+     * filter writes no {@code Access-Control-Allow-Origin} header, and the browser refuses the
+     * response on the caller's behalf. That is the right default for the proxied development
+     * setup, where a cross-origin request would be a mistake rather than a configuration gap.
+     *
+     * <p>The methods are the ones the API actually answers on, and the request headers the ones a
+     * client actually sends: the bearer token, the content type of a JSON body or a multipart
+     * upload, and the accept header. A preflight is cached for an hour, so a browsing session
+     * pays for it once per endpoint shape rather than once per request.
+     */
+    @Bean
+    CorsConfigurationSource corsConfigurationSource(CorsProperties properties) {
+        if (properties.allowedOrigins().isEmpty()) {
+            log.info("snrm.cors.allowed-origins is unset: no cross-origin browser request will be "
+                    + "answered. Set it (environment variable SNRM_CORS_ORIGINS) if the frontend "
+                    + "bundle is served from somewhere other than this application.");
+            return request -> null;
+        }
+
+        CorsConfiguration configuration = new CorsConfiguration();
+        configuration.setAllowedOrigins(properties.allowedOrigins());
+        configuration.setAllowedMethods(List.of(
+                HttpMethod.GET.name(), HttpMethod.POST.name(), HttpMethod.PUT.name(),
+                HttpMethod.PATCH.name(), HttpMethod.DELETE.name(), HttpMethod.OPTIONS.name()));
+        configuration.setAllowedHeaders(List.of(
+                HttpHeaders.AUTHORIZATION, HttpHeaders.CONTENT_TYPE, HttpHeaders.ACCEPT));
+        // Without this the filename of every export and archive download is unreadable from
+        // script, and the client falls back to guessing one.
+        configuration.setExposedHeaders(List.of(HttpHeaders.CONTENT_DISPOSITION));
+        configuration.setAllowCredentials(false);
+        configuration.setMaxAge(PREFLIGHT_CACHE);
+
+        log.info("CORS enabled for {}", properties.allowedOrigins());
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", configuration);
+        return source;
     }
 
     /** BCrypt at its default strength. */

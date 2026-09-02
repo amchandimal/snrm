@@ -37,3 +37,4 @@ build/
 # Holds the local MySQL password. Copy application-local.properties.example
 # (which IS committed) and edit your copy — never commit this file.
 src/main/resources/application-local.properties
+Dockerfile_Chandimal
