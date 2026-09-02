@@ -257,15 +257,13 @@ export class ProjectDashboardComponent {
       { allowSignalWrites: true },
     );
 
-    // The "everything you ticked is frozen" sentence names one selection (FR-23), and so does the
-    // blocked-window link of FR-25 - its `?ids=` is the set as it was when the click happened.
-    // Ticking or unticking anything, or a reload reconciling a row away, makes both statements about
-    // a set that no longer exists, so they go with the change rather than being left to be re-read.
+    // The "everything you ticked is frozen" sentence names one selection (FR-23). Ticking or
+    // unticking anything, or a reload reconciling a row away, makes it a statement about a set
+    // that no longer exists, so it goes with the change rather than being left to be re-read.
     effect(
       () => {
         this.store.selectedNetworks();
         this.selectionBlocker.set(null);
-        this.blockedComparison.set(null);
       },
       { allowSignalWrites: true },
     );
@@ -781,34 +779,25 @@ export class ProjectDashboardComponent {
       .finally(() => this.pendingExport.set(null));
   }
 
-  // ------------------------------------- the selection, side by side in a new window (FR-25)
+  // ------------------------------------- the selection, side by side (FR-25)
 
   /**
-   * The side-by-side URL when the browser refused to open it, or null.
+   * Open the ticked networks side by side (FR-25).
    *
-   * A pop-up blocker returns null from `window.open` and says nothing else, so the address is put on
-   * screen as a link the reader can take themselves. That is only possible *because* the view's whole
-   * state is in its URL (FR-25): a window opened by handing data to a child would have nothing to
-   * offer here but an apology.
-   */
-  readonly blockedComparison = signal<string | null>(null);
-
-  /**
-   * Open the ticked networks side by side, in a **new browser window** (FR-25).
+   * The address is what FR-25 is really asking for, and it is unchanged: the ids travel on the
+   * query string, so the comparison can be reloaded, bookmarked and sent to someone else, and
+   * nothing is handed over in memory that a reload would lose.
    *
-   * > "The Compare action opens a new browser window showing one pane per selected network."
-   *
-   * The address is serialised by the router rather than assembled by hand - one place that knows
-   * this application's URL shape - and the ids travel on the query string, which is what makes the
-   * window a place rather than a handoff: reload it, bookmark it, send it to a supervisor, and it is
-   * the same twelve panes. Nothing is passed in memory, so nothing is lost when the opener is closed.
-   *
-   * `window.open` is called **synchronously in the click**, which is the condition every browser
-   * attaches to allowing a pop-up at all; a confirmation dialog in between would have made this a
-   * blocked window every time. There is nothing to confirm in any case - the view is read-only, so
-   * there is no consequence to warn about, which is exactly the argument `selectionExportConfirm`
-   * makes for having no typed phrase and then goes on to need a dialog for reasons that do not apply
-   * here (nothing is written, and no file exists afterwards to be wrong).
+   * **It navigates in place rather than opening a second window, and the reason is deployment.**
+   * A new window is a fresh document request, and a fresh request for
+   * `/projects/1/comparison/structure` is one the *server* has to answer. Only a server told to
+   * fall back to `index.html` for unknown paths does; a static host — which is where a compiled
+   * bundle usually sits — answers 404, and the reader loses the comparison to an error page.
+   * Routing in place asks the server for nothing, so the action behaves the same under
+   * `ng serve`, on a static host, and behind nginx. It also survives a **sub-path base href**,
+   * which the old `window.open` did not: `serializeUrl` yields a root-absolute path, and the
+   * browser resolves that against the origin rather than against `<base href>`, so an application
+   * served from `/app/` opened `/projects/…` at the domain root and 404ed there too.
    *
    * The cap is `compareBlocker`'s, the same function the menu states it from, so the entry cannot
    * offer what this refuses.
@@ -819,25 +808,11 @@ export class ProjectDashboardComponent {
     if (!projectId || compareBlocker(selected.length) !== null) {
       return;
     }
-    this.blockedComparison.set(null);
-    const url = this.router.serializeUrl(
-      this.router.createUrlTree(['/projects', projectId, 'comparison', 'structure'], {
-        queryParams: { ids: paneIdsParam(selected.map((network) => network.id)) },
-      }),
-    );
-    // A relative URL resolves against this document, so the new window lands on the same origin and
-    // the same base href without either being restated here.
-    //
-    // `noopener` and **no size features**, deliberately. Naming a width or a height would make it a
-    // pop-up in Chrome's sense - a window with no address bar - which would take away the one thing
-    // FR-25 asks the view to be: an address the reader can see, copy and bookmark. Whether the
-    // browser gives them a tab or a window is theirs to configure, and either is side by side.
-    // `noopener` severs `window.opener` so the new context is genuinely independent, which is the
-    // same fact as the ids being in the URL rather than in this page's memory.
-    const opened = window.open(url, '_blank', 'noopener');
-    if (!opened) {
-      this.blockedComparison.set(url);
-    }
+    // Router navigation rather than a hand-built URL: the base href is then the router's problem,
+    // and under a sub-path deployment it is a problem something has to solve.
+    void this.router.navigate(['/projects', projectId, 'comparison', 'structure'], {
+      queryParams: { ids: paneIdsParam(selected.map((network) => network.id)) },
+    });
   }
 
   private loadProject(projectId: Id): void {

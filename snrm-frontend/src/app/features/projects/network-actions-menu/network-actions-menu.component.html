@@ -90,10 +90,12 @@
         </button>
 
         <!--
-          FR-25. Opens a **new browser window** at `/projects/:id/comparison/structure?ids=…`, laid out
-          as ⌈√n⌉ columns of read-only FR-22 miniatures - one per selected network - sharing a by-name
-          element selection. The ids are on the query string, so the
-          window is a real address rather than a handoff: it survives a reload and can be bookmarked.
+          FR-25. Goes to `/projects/:id/comparison/structure?ids=…`, laid out as ⌈√n⌉ columns of
+          read-only FR-22 miniatures - one per selected network - sharing a by-name element
+          selection. The ids are on the query string, so the view is a real address rather than a
+          handoff: it survives a reload and can be bookmarked. Reached by routing in place rather
+          than by opening a window, so no server has to know the route exists - the argument is in
+          `project-dashboard.component.openComparison`.
 
           Gated on the count alone. The freeze is irrelevant here for the same reason it is irrelevant
           to the export above - it is about *edits*, and this view is read-only throughout.
@@ -106,7 +108,7 @@
           [attr.aria-describedby]="hintId"
           [title]="
             compareBlocked() ??
-            'Open the selected networks side by side in a new window - one read-only miniature per pane, with a shared by-name element selection (FR-25).'
+            'Show the selected networks side by side - one read-only miniature per pane, with a shared by-name element selection (FR-25).'
           "
           (click)="choose('compare')"
         >

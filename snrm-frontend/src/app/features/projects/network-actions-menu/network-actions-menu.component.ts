@@ -136,7 +136,7 @@ export class NetworkActionsMenuComponent implements RegisteredMenu {
    */
   readonly exportSelected = output<void>();
   /**
-   * FR-25: open the selection side by side in a new window.
+   * FR-25: show the selection side by side.
    *
    * Gated on the count and on nothing else, and the gate is `comparison/pane-grid.compareBlocker` -
    * a **cross-feature import of a pure module**, under the precedent already set for

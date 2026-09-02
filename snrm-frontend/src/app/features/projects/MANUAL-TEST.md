@@ -327,8 +327,8 @@ and twelve is the count that fills it.) All three are enabled.
 **42.** Hover the last two entries.
 → **Export as a project…** - the ordinary project archive narrowed to the selected networks,
 restorable as a separate project; it copies and never moves. **Compare side by side…** - the selected
-networks in a new window, one read-only miniature per pane, sharing a by-name element selection.
-`../comparison/MANUAL-TEST.md` walks that window; this section only checks the menu.
+networks side by side, one read-only miniature per pane, sharing a by-name element selection.
+`../comparison/MANUAL-TEST.md` walks that view; this section only checks the menu.
 
 **42a.** Tick a **thirteenth** network (duplicate rows with FR-26's *Duplicate network* if the
 project has fewer) and reopen the menu.

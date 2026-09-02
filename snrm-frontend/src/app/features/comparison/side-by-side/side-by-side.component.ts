@@ -36,9 +36,9 @@ import { ComparisonPane, SideBySideStore, paneHasAnswered } from '../side-by-sid
  *
  * `/projects/:projectId/comparison/structure?ids=3,4,5`. Nothing is handed to this route in memory,
  * which is what makes it a real place: it survives a reload, it can be bookmarked, and it can be
- * mailed to a supervisor who will see the same twelve panes. `window.open` from the FR-23 actions menu
- * is then an ordinary navigation to an ordinary address rather than a channel - the dashboard writes
- * the URL and forgets it.
+ * mailed to a supervisor who will see the same twelve panes. The FR-23 actions menu is then an
+ * ordinary navigation to an ordinary address rather than a channel - the dashboard writes the URL
+ * and forgets it.
  *
  * That also means the ids are untrusted input in the ordinary sense, and `pane-grid.parsePaneIds` is
  * where every way a link can be stale or hand-edited has an answer: a network deleted since, a token

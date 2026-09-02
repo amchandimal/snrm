@@ -123,9 +123,9 @@ export const routes: Routes = [
         // question: the matrix above answers how these configurations *performed*, and this answers
         // how they are *shaped* - two readings kept deliberately distinct.
         //
-        // **The networks are on the query string, not in memory.** The FR-23 actions menu opens this
-        // in a new browser window, and it has to be a real address: one that survives a reload, can
-        // be bookmarked and can be sent to somebody else. `pane-grid.parsePaneIds` is what reads it,
+        // **The networks are on the query string, not in memory.** The FR-23 actions menu routes
+        // here, and it has to be a real address: one that survives a reload, can be bookmarked and
+        // can be sent to somebody else. `pane-grid.parsePaneIds` is what reads it,
         // including every way a link can be stale by the time it is opened.
         path: ':projectId/comparison/structure',
         title: 'Networks side by side · SNRM',

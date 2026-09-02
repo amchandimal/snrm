@@ -5,6 +5,10 @@
     "ng": "ng",
     "start": "ng serve",
     "build": "ng build",
+    "postbuild": "npm run spa-fallback",
+    "build:pages": "ng build --base-href /snrm.github.io/",
+    "postbuild:pages": "npm run spa-fallback",
+    "spa-fallback": "node -e \"const f=require('fs'),d='dist/snrm-frontend/browser';f.copyFileSync(d+'/index.html',d+'/404.html')\"",
     "watch": "ng build --watch --configuration development",
     "test": "ng test"
   },

@@ -80,11 +80,11 @@ one click away."* **The cap is stated here, before the window exists** (FR-25), 
 larger grids cost.
 
 **9.** Choose **Compare side by side…**.
-→ A **new browser window** opens on `/projects/<id>/comparison/structure?ids=…`, titled *Networks
-side by side*. The dashboard window is untouched - same scroll position, same four rows still ticked.
+→ The address becomes `/projects/<id>/comparison/structure?ids=…` and the tab is titled *Networks
+side by side*. Back returns to the dashboard with the same four rows still ticked.
 
-> If your browser blocks the pop-up, the dashboard raises an amber banner with the address as a
-> link. That is a feature of the ids being in the URL, not a workaround: open it and continue.
+> Nothing opens a second window, so nothing here depends on a pop-up setting. Copy the address
+> and open it in a new tab if you want the dashboard beside it - the ids are all it needs.
 
 ---
 
@@ -276,7 +276,7 @@ name, and repeat until the table holds twelve.
 by the first cap, and eleven and twelve by the second.
 
 **29.** Choose it. This is the reading the amendments exist for.
-→ A new window of **twelve panes in 4 columns × 3 rows, with no gap in it**, and **every pane opens
+→ **Twelve panes in 4 columns × 3 rows, with no gap in it**, and **every pane opens
 collapsed**: twelve titles, twelve miniatures, twelve closed headings. *Shapes beside shapes.* Above
 the grid the control reads **Expand all** - every pane is collapsed, so that is the state pressing it
 produces - beside the sentence *"12 panes take more than 2 rows, so each opens as a title and a

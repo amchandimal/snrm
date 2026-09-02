@@ -77,19 +77,22 @@ fork with the same field, and one diff rendered two ways would be a defect nobod
 network with the **read-only miniature of FR-22** above its identity and its topological suite, all
 sharing one **by-name element selection**. Up to **twelve** panes, each pane's suite
 collapsible (FR-27), and a **checkbox per metric** above the grid choosing which of the suite the
-panes print (FR-31). Opened in a new browser window from the FR-23 actions menu on the project
+panes print (FR-31). Reached from the FR-23 actions menu on the project
 dashboard. `MANUAL-TEST.md` walks it.
 
 Files: `pane-grid.ts`, `element-matching.ts` and `metric-visibility.ts` (pure, each with a spec),
 `side-by-side.store.ts`, `side-by-side/` (the window) and `network-pane/` (one pane).
 
-### The ids are in the URL, and that is what makes it a window rather than a handoff
+### The ids are in the URL, and that is what makes it a place rather than a handoff
 
-Nothing is passed in memory. The dashboard serialises `/projects/5/comparison/structure?ids=3,4,5`
-through the router and calls `window.open`; from that moment the window is an ordinary address that
-survives a reload, can be bookmarked, and can be mailed to a supervisor who will see the same panes.
-It is also why a blocked pop-up has a remedy - the dashboard can offer the link itself, which a
-window fed by a shared service could not.
+Nothing is passed in memory. The dashboard routes to `/projects/5/comparison/structure?ids=3,4,5`;
+from that moment the view is an ordinary address that survives a reload, can be bookmarked, and can
+be mailed to a supervisor who will see the same panes.
+
+It is a **navigation in place, not a second window**, and that is a deployment decision rather than
+a preference: opening a window is a fresh document request, which only a server configured to fall
+back to `index.html` can answer for a client-side route. `project-dashboard.openComparison` carries
+the argument.
 
 The consequence is that `?ids=` is untrusted input in the ordinary sense, and `parsePaneIds` answers
 every way a link can be wrong without an error page: a network deleted since (the pane says so in

@@ -314,26 +314,6 @@
       here rather than behind a typed phrase for a guaranteed no-op - the judgement
       `core/run-discard.activeRunsBlocker` already makes for a discard the server would refuse.
     -->
-    <!--
-      The browser refused the new window (FR-25). Because the view's whole state is in its URL, the
-      address itself is the remedy - offered as a link rather than as an instruction to go and find
-      a pop-up setting.
-    -->
-    @if (blockedComparison(); as url) {
-      <div class="alert alert-warning d-flex justify-content-between align-items-start" role="alert">
-        <span class="small">
-          Your browser blocked the new window. The comparison is a real address, so you can open it
-          yourself: <a [href]="url" target="_blank" rel="noopener">open it side by side</a>.
-        </span>
-        <button
-          type="button"
-          class="btn-close"
-          aria-label="Dismiss"
-          (click)="blockedComparison.set(null)"
-        ></button>
-      </div>
-    }
-
     @if (selectionBlocker(); as message) {
       <div class="alert alert-warning d-flex justify-content-between align-items-start" role="alert">
         <span class="small">{{ message }}</span>
